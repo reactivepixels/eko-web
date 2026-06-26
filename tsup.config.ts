@@ -1,9 +1,9 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  // Core engine is the main entry. Adapters (element facade, React hook) are added
-  // as separate entries in Phase 4 so the core never pulls in React.
-  entry: { index: "src/index.ts" },
+  // Core engine is the main entry; the HTMLMediaElement facade is a separate entry so
+  // it's tree-shakeable and the core stays framework-agnostic.
+  entry: { index: "src/index.ts", element: "src/adapters/eko-audio-element.ts" },
   format: ["esm", "cjs"],
   dts: true,
   splitting: true,
