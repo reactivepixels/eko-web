@@ -5,6 +5,15 @@
 
 export class MockParam {
   value = 1;
+  scheduled: Array<{ value: number; time: number }> = [];
+  setValueAtTime(value: number, time: number): this {
+    this.scheduled.push({ value, time });
+    return this;
+  }
+  cancelScheduledValues(_time: number): this {
+    this.scheduled = [];
+    return this;
+  }
 }
 
 export class MockGainNode {
@@ -18,11 +27,13 @@ export class MockBufferSource {
   onended: (() => void) | null = null;
   started = false;
   stopped = false;
+  startWhen = 0;
   startOffset = 0;
   connect(): void {}
   disconnect(): void {}
-  start(_when = 0, offset = 0): void {
+  start(when = 0, offset = 0): void {
     this.started = true;
+    this.startWhen = when;
     this.startOffset = offset;
   }
   stop(): void {

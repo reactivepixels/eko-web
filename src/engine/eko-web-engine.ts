@@ -1,5 +1,6 @@
 import { Emitter } from "./event-emitter";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain, dbToLinear } from "./loudness";
+import { trackEndTime } from "./scheduling";
 import type {
   EkoTrack,
   EkoState,
@@ -16,12 +17,20 @@ interface DecodedTrack {
   duration: number;
 }
 
+/** The next track, decoded and scheduled to start at exactly `startCtxTime` (gapless). */
+interface ArmedTrack {
+  decoded: DecodedTrack;
+  source: AudioBufferSourceNode;
+  index: number;
+  startCtxTime: number;
+}
+
 const DEFAULTS = { normalize: true, targetLufs: -16, gapless: true };
 
 /**
  * Web Audio playback engine: decode-to-buffer playback through a gain graph
  * (`rgGain → fadeGain → userGain → destination`) with ReplayGain-style loudness
- * normalization. Phase 2: single track. Gapless queueing lands in Phase 3.
+ * normalization and true (sample-accurate) gapless track transitions.
  *
  * NOT bit-perfect — see the project README.
  */
@@ -41,6 +50,7 @@ export class EkoWebEngine {
   private index = -1;
   private decoded: DecodedTrack | null = null;
   private source: AudioBufferSourceNode | null = null;
+  private armed: ArmedTrack | null = null;
 
   private _state: EkoState = "idle";
   private _volume = 1;
@@ -102,8 +112,10 @@ export class EkoWebEngine {
 
   // ── Queue / load ────────────────────────────────────────────────────────────
   setQueue(tracks: EkoTrack[]): void {
+    this.teardown();
     this.queue = tracks.slice();
     this.index = tracks.length > 0 ? 0 : -1;
+    this._paused = true;
     if (this.index >= 0) void this.loadIndex(0);
   }
 
@@ -178,12 +190,14 @@ export class EkoWebEngine {
     this.setState("playing");
     this.emitter.emit("play");
     this.startRaf();
+    void this.armNext();
   }
 
   pause(): void {
     if (this._paused) return;
     const t = this.currentTime; // capture before stopping the source
     this.stopSource();
+    this.clearArmed();
     this.startOffset = t;
     this._paused = true;
     this.setState("paused");
@@ -198,9 +212,33 @@ export class EkoWebEngine {
       this.startOffset = t;
     } else {
       this.stopSource();
+      this.clearArmed();
       this.startSource(t);
+      void this.armNext(); // re-arm from the new position
     }
     this.emitter.emit("timeupdate", { currentTime: t, duration: this.decoded.duration });
+  }
+
+  /** Skip to the next track (manual — a small decode gap is acceptable here). */
+  next(): void {
+    if (this.index + 1 < this.queue.length) void this.skipTo(this.index + 1);
+  }
+
+  /** Skip to the previous track. */
+  previous(): void {
+    if (this.index > 0) void this.skipTo(this.index - 1);
+  }
+
+  private async skipTo(index: number): Promise<void> {
+    const wasPlaying = !this._paused;
+    this.stopSource();
+    this.clearArmed();
+    this._paused = true;
+    this.stopRaf();
+    await this.loadIndex(index);
+    const track = this.queue[index];
+    if (track) this.emitter.emit("trackchange", { index, track });
+    if (wasPlaying) void this.play();
   }
 
   setVolume(v: number): void {
@@ -216,14 +254,90 @@ export class EkoWebEngine {
   }
 
   destroy(): void {
-    this.stopSource();
-    this.stopRaf();
+    this.teardown();
     this.emitter.clear();
     if (this.ctx && !this.injectedContext) void this.ctx.close();
     this.ctx = null;
   }
 
-  // ── Internals ───────────────────────────────────────────────────────────────
+  // ── Gapless internals ─────────────────────────────────────────────────────────
+  /** Decode the next queued track and schedule it to start the instant this one ends. */
+  private async armNext(): Promise<void> {
+    if (!this.gapless || this._paused || !this.decoded || !this.ctx) return;
+    const nextIndex = this.index + 1;
+    if (nextIndex >= this.queue.length || this.armed) return;
+    const track = this.queue[nextIndex];
+    if (!track) return;
+
+    // The boundary is fixed once the current source started (start time + offset).
+    const endCtxTime = trackEndTime(this.startCtxTime, this.decoded.duration, this.startOffset);
+
+    let next: DecodedTrack;
+    try {
+      next = await this.decodeTrack(track);
+    } catch {
+      return; // can't preload → falls back to a small gap at the boundary
+    }
+    // Bail if playback moved on while we were decoding (pause / seek / skip / re-arm).
+    if (this._paused || !this.ctx || this.index !== nextIndex - 1 || this.armed) return;
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = next.buffer;
+    source.connect(this.rgGain!);
+    source.onended = (): void => {
+      if (!this.endedByStop) this.handleSourceEnded();
+    };
+    source.start(endCtxTime, 0);
+    // Jump the shared normalization gain to the next track's value exactly at the boundary.
+    this.rgGain!.gain.setValueAtTime(next.normGain, endCtxTime);
+    this.armed = { decoded: next, source, index: nextIndex, startCtxTime: endCtxTime };
+  }
+
+  /** A source reached its natural end — promote the armed next track, or end the queue. */
+  private handleSourceEnded(): void {
+    if (this.armed) {
+      const armed = this.armed;
+      this.armed = null;
+      this.decoded = armed.decoded;
+      this.source = armed.source;
+      this.index = armed.index;
+      this.startCtxTime = armed.startCtxTime;
+      this.startOffset = 0;
+      this.emitter.emit("durationchange", { duration: armed.decoded.duration });
+      this.emitter.emit("trackchange", { index: armed.index, track: armed.decoded.track });
+      void this.armNext();
+    } else {
+      this.handleNaturalEnd();
+    }
+  }
+
+  private clearArmed(): void {
+    if (this.armed) {
+      try {
+        this.armed.source.stop();
+      } catch {
+        /* not started */
+      }
+      this.armed.source.disconnect();
+      this.armed = null;
+    }
+    if (this.ctx && this.rgGain) {
+      this.rgGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      if (this.decoded) this.rgGain.gain.value = this.decoded.normGain;
+    }
+  }
+
+  private handleNaturalEnd(): void {
+    this.stopRaf();
+    this._paused = true;
+    this.source = null;
+    this.startOffset = this.decoded?.duration ?? 0;
+    this.setState("ended");
+    this.emitter.emit("timeupdate", { currentTime: this.duration, duration: this.duration });
+    this.emitter.emit("ended");
+  }
+
+  // ── Source / graph internals ──────────────────────────────────────────────────
   private ensureGraph(): AudioContext {
     if (this.ctx) return this.ctx;
     const ctx = this.injectedContext ?? createAudioContext();
@@ -246,8 +360,8 @@ export class EkoWebEngine {
     this.rgGain!.gain.value = decoded.normGain;
     source.connect(this.rgGain!);
     this.endedByStop = false;
-    source.onended = () => {
-      if (!this.endedByStop) this.handleNaturalEnd();
+    source.onended = (): void => {
+      if (!this.endedByStop) this.handleSourceEnded();
     };
     source.start(0, offset);
     this.source = source;
@@ -267,15 +381,11 @@ export class EkoWebEngine {
     this.source = null;
   }
 
-  private handleNaturalEnd(): void {
-    // Phase 3 hooks gapless next-track scheduling in here. Phase 2: end the playback.
+  /** Stop both the current and armed sources (used by pause/seek/skip/destroy). */
+  private teardown(): void {
+    this.stopSource();
+    this.clearArmed();
     this.stopRaf();
-    this._paused = true;
-    this.source = null;
-    this.startOffset = this.decoded?.duration ?? 0;
-    this.setState("ended");
-    this.emitter.emit("timeupdate", { currentTime: this.duration, duration: this.duration });
-    this.emitter.emit("ended");
   }
 
   private setState(s: EkoState): void {
