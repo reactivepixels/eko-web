@@ -61,8 +61,14 @@ queue; see the docs.)
 
 ## Status
 
-Early. Built in phases: scaffold → single-track + normalization → gapless + queue →
-adapters + demo. Not yet published to npm.
+**v0.1 — feature-complete core, not yet published to npm.** Done: the engine
+(decode-to-buffer playback, loudness normalization), **true gapless** queueing, the
+`EkoAudioElement` facade (`eko-web/element`), and a no-build demo (`examples/`). 46 unit
+tests, dual ESM/CJS build with types.
+
+Not yet: a React hook (`useEkoPlayer`), a streaming/oversized fallback (decode-to-buffer
+needs the whole file — fine for tracks, not live/multi-hour), fades/EQ, and tag-based
+ReplayGain. See the demo to ear-test gapless + normalization.
 
 ## License
 
