@@ -127,33 +127,38 @@ export class EkoQueue {
   }
 
   /**
-   * Step back through what was actually played. Under shuffle that is the only correct
-   * answer: the index below the current one was probably never heard.
+   * Step back through what was actually played, and return the track. Under shuffle that
+   * is the only correct answer: the index below the current one was probably never heard.
+   * A thin wrapper: `stepBack()` holds the one implementation, this just resolves its
+   * result to a track.
    */
   previous(): EkoTrack | null {
-    const fromHistory = this.history.pop();
-    if (fromHistory !== undefined) {
-      this.index = fromHistory;
-      return this.current;
-    }
-    if (this.index > 0) {
-      this.index -= 1;
-      return this.current;
-    }
-    return null;
+    const target = this.stepBack();
+    return target < 0 ? null : this.current;
   }
 
-  /** Step back one entry in history. Returns the index moved to, or -1 when there is none. */
+  /**
+   * Step back one entry in history, or one sequential index when there is none. Returns
+   * the index moved to, or -1 when there is nowhere to go.
+   *
+   * Under shuffle, the index being left has probably not been heard yet in this pass (it
+   * was just arrived at going forward, or is the queue's starting point), so it goes back
+   * onto the FRONT of the bag rather than triggering a full rebuild: a rebuild would
+   * forget every other track already drawn in this pass, and hand some of them back out
+   * again before the rest of the pass has played. Putting it on the front also means
+   * stepping back and then immediately forward again retraces the same track, which is
+   * the behaviour a listener bouncing Previous/Next expects.
+   */
   stepBack(): number {
     const last = this.history.pop();
     if (last !== undefined) {
+      if (this._shuffle) this.bag.unshift(this.index);
       this.index = last;
-      this.refillBag(last);
       return last;
     }
     if (this.index > 0) {
+      if (this._shuffle) this.bag.unshift(this.index);
       this.index -= 1;
-      this.refillBag(this.index);
       return this.index;
     }
     return -1;
@@ -170,7 +175,9 @@ export class EkoQueue {
   jumpTo(index: number): EkoTrack | null {
     if (index < 0 || index >= this.tracks.length) return null;
     this.index = index;
-    this.refillBag(index);
+    // Same reasoning as stepBack(): only retire the one index actually landed on, rather
+    // than rebuilding the whole pool and forgetting the rest of the pass.
+    this.removeFromBag(index);
     return this.current;
   }
 
@@ -188,5 +195,12 @@ export class EkoQueue {
       }
     }
     this.bag = pool;
+  }
+
+  /** Drop `index` from the bag if it is sitting in there, without disturbing the rest. */
+  private removeFromBag(index: number): void {
+    if (!this._shuffle) return;
+    const pos = this.bag.indexOf(index);
+    if (pos >= 0) this.bag.splice(pos, 1);
   }
 }

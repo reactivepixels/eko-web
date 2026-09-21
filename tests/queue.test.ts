@@ -255,6 +255,50 @@ describe("EkoQueue stepBack", () => {
     const q = make(3);
     expect(q.stepBack()).toBe(-1);
   });
+
+  it("stepping back and then advancing again redraws the same track, not a fresh one", () => {
+    // stepBack() puts the index it is leaving back on the FRONT of the bag rather than
+    // rebuilding the pool, so the pass survives: the very next draw is that same track.
+    const q = make(8);
+    q.shuffle = true;
+    q.advance();
+    q.advance();
+    const beforeBack = q.currentIndex;
+    q.stepBack();
+    expect(q.advance()?.id).toBe(String(beforeBack));
+  });
+
+  it("previous() preserves the pass the same way, having delegated to stepBack()", () => {
+    const q = make(8);
+    q.shuffle = true;
+    q.advance();
+    q.advance();
+    const beforeBack = q.currentIndex;
+    q.previous();
+    expect(q.advance()?.id).toBe(String(beforeBack));
+  });
+
+  it("jumpTo removes the destination from the bag instead of rebuilding the whole pool", () => {
+    const q = make(8);
+    q.shuffle = true;
+    const seen = [q.currentIndex];
+    q.advance();
+    seen.push(q.currentIndex);
+    q.advance();
+    seen.push(q.currentIndex);
+    // The bag's own next candidate: guaranteed to still be sitting in the bag.
+    const target = Number(q.peekNext()!.id);
+    q.jumpTo(target);
+    seen.push(q.currentIndex);
+    // Four tracks are now accounted for (start, two advances, the jump). Walking the
+    // remaining four must complete the pass without repeating any of those four: a rebuild
+    // (rather than removing just the jumped-to entry) would put them back in contention.
+    for (let i = 0; i < 4; i++) {
+      q.advance();
+      seen.push(q.currentIndex);
+    }
+    expect(new Set(seen).size).toBe(8);
+  });
 });
 
 describe("EkoQueue setTracks", () => {
