@@ -14,8 +14,16 @@ export interface SelectOptions {
  * Returns null whenever the answer is not knowable (no header, a failed request, a server
  * that refuses HEAD). Callers treat null as "take the buffer path", because most tracks
  * are fine and a missing Content-Length is common on development servers.
+ *
+ * `blob:` and `data:` URLs never reach the network: the bytes are already in memory (a
+ * File the consumer handed the browser, or an inline data URI), so there is no server to
+ * ask and nothing to stream even if the file were huge. Browsers also flatly refuse a HEAD
+ * request against a `blob:` URL, so without this check every such track would cost a
+ * doomed request and a network error the consumer neither caused nor can suppress. Skipped
+ * before the `try`, not left to the catch below, so this never touches `fetch` at all.
  */
 export async function probeContentLength(src: string): Promise<number | null> {
+  if (src.startsWith("blob:") || src.startsWith("data:")) return null;
   try {
     const res = await fetch(src, { method: "HEAD" });
     if (!res.ok) return null;

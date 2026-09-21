@@ -67,4 +67,87 @@ describe("selectStrategy", () => {
     );
     expect(strategy.kind).toBe("element");
   });
+
+  it("takes the buffer path for a blob: URL without probing (browsers refuse HEAD on it)", async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      // A real browser throws on HEAD against a blob: URL; behave as if it succeeded
+      // instead, so the only way this test can fail is on the call count itself, not on
+      // whatever the catch-all in probeContentLength happens to do with an error.
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (): string | null => String(400 * MB) },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+    const strategy = await selectStrategy({ src: "blob:http://localhost/some-uuid" }, OPTS);
+    expect(calls).toBe(0);
+    expect(strategy.kind).toBe("buffer");
+  });
+
+  it("takes the buffer path for a data: URL without probing", async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (): string | null => String(400 * MB) },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+    const strategy = await selectStrategy({ src: "data:audio/wav;base64,AAAA" }, OPTS);
+    expect(calls).toBe(0);
+    expect(strategy.kind).toBe("buffer");
+  });
+});
+
+describe("probeContentLength: blob/data URLs", () => {
+  it("returns null for a blob: URL without calling fetch", async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (): string | null => "1234" },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+    expect(await probeContentLength("blob:http://localhost/some-uuid")).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it("returns null for a data: URL without calling fetch", async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (): string | null => "1234" },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+    expect(await probeContentLength("data:audio/wav;base64,AAAA")).toBeNull();
+    expect(calls).toBe(0);
+  });
 });
