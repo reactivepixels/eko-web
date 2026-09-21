@@ -169,8 +169,9 @@
         engine = new EkoWebEngine({
           normalize: true,
           transition: transitionMode,
-          crossfadeSeconds:
-            transitionMode === "crossfade" ? parseFloat($("crossfade-seconds").value) : 3,
+          // Always passed: the engine ignores it unless the transition is crossfade, so
+          // there is no need to second-guess the control here.
+          crossfadeSeconds: parseFloat($("crossfade-seconds").value),
           shuffle: $("shuffle").checked,
           repeat: $("repeat-mode").value,
           source: $("source-mode").value,
