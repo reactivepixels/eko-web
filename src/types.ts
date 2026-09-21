@@ -1,5 +1,15 @@
 import type { EkoError } from "./engine/errors";
 
+/**
+ * What actually happened at a track boundary.
+ *
+ * `"gapless"` means the next source was scheduled on the exact sample the previous one
+ * ended. `"gap"` means it was not, either because the policy asked for a gap, because one
+ * side of the boundary was a streaming source that cannot be scheduled, or because the
+ * prefetch failed. The engine reports this rather than degrading silently.
+ */
+export type TransitionKind = "gapless" | "gap";
+
 /** A track in the engine's queue. */
 export interface EkoTrack {
   /** Stable id for the consumer (optional). */
@@ -30,6 +40,8 @@ export interface EkoWebEngineOptions {
   targetLufs?: number;
   /** Gapless transitions between queued tracks. Default: `true`. */
   gapless?: boolean;
+  /** Boundary policy between queued tracks. Default: `"gapless"`. */
+  transition?: TransitionKind;
   /**
    * Inject an AudioContext (a shared app context, or a mock in tests). When omitted, one is
    * created lazily on first `play()` (so it's tied to a user gesture per autoplay policy).
@@ -77,8 +89,12 @@ export interface EkoEventMap {
   timeupdate: { currentTime: number; duration: number };
   progress: { bufferedEnd: number };
   ended: void;
-  /** Fires AFTER a seamless gapless transition — the UI advances on this, not on `src` swap. */
-  trackchange: { index: number; track: EkoTrack };
+  /** Fires AFTER a track boundary. The UI advances on this, not on a `src` swap. */
+  trackchange: {
+    index: number;
+    track: EkoTrack;
+    transition: TransitionKind;
+  };
   volumechange: { volume: number; muted: boolean };
   error: {
     error: EkoError;

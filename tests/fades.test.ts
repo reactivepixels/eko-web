@@ -106,4 +106,24 @@ describe("engine fades", () => {
     expect(fresh.startWhen).toBeCloseTo(0.1 + DEFAULT_FADE_SECONDS, 6);
     expect(fresh.startOffset).toBeCloseTo(0.3, 6);
   });
+
+  it("fades out on a manual skip while playing, instead of cutting abruptly", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }, { src: "/b.flac" }]);
+    await ready;
+    await engine.play();
+
+    ctx.currentTime = 0.15;
+    engine.next();
+
+    // The outgoing source is stopped on the ramp's last sample, the same shape pause()
+    // and seek() already use, not cut with no `when` (which would click).
+    const fadeGain = ctx.gains[1]!;
+    expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 0, time: 0.15 + DEFAULT_FADE_SECONDS });
+    expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.15 + DEFAULT_FADE_SECONDS, 6);
+  });
 });

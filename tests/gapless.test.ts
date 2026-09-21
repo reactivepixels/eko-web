@@ -63,7 +63,7 @@ describe("gapless", () => {
 
     ctx.sources[0]!.fireEnded(); // track A ends → seamless promote to B
     expect(engine.currentIndex).toBe(1);
-    expect(changed).toHaveBeenCalledWith({ index: 1, track: tracks[1] });
+    expect(changed).toHaveBeenCalledWith({ index: 1, track: tracks[1], transition: "gapless" });
     expect(engine.state).not.toBe("ended");
   });
 
@@ -202,11 +202,15 @@ describe("gapless", () => {
       expect(ctx.sources.length).toBe(1); // only track A's buffer source, never armed a second
       expect(ctx.mediaSources.length).toBe(1); // track B was loaded, then discarded unarmed
 
-      // With nothing armed, track A's natural end falls back to a gap instead of an
-      // early start on an unscheduled element source.
+      // With nothing armed, track A's natural end now advances the queue with an audible
+      // gap instead of an early start on an unscheduled element source, and instead of
+      // stalling on track A forever.
       ctx.sources[0]!.fireEnded();
-      expect(engine.state).toBe("ended");
-      expect(engine.currentIndex).toBe(0);
+      await flush();
+      await flush(); // track B (element) reloads from a standing start
+      expect(engine.currentIndex).toBe(1);
+      expect(engine.state).not.toBe("ended");
+      expect(engine.lastTransition).toBe("gap");
     } finally {
       (globalThis as { Audio?: unknown }).Audio = originalAudio;
       warnSpy.mockRestore();

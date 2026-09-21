@@ -5,6 +5,7 @@ export type {
   EkoEventMap,
   EkoEventName,
   EkoEventListener,
+  TransitionKind,
 } from "./types";
 
 // Loudness utilities are part of the public surface — useful for offline analysis or

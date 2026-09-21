@@ -11,6 +11,7 @@ import type {
   EkoWebEngineOptions,
   EkoEventName,
   EkoEventListener,
+  TransitionKind,
 } from "../types";
 
 /** The next track, loaded and scheduled to start at exactly `startCtxTime` (gapless). */
@@ -24,6 +25,7 @@ const DEFAULTS = {
   normalize: true,
   targetLufs: -16,
   gapless: true,
+  transition: "gapless" as TransitionKind,
   fadeSeconds: DEFAULT_FADE_SECONDS,
   source: "auto" as const,
   bufferMaxBytes: 50 * 1024 * 1024,
@@ -43,6 +45,8 @@ export class EkoWebEngine {
   private readonly normalize: boolean;
   private readonly targetLufs: number;
   private readonly gapless: boolean;
+  private readonly transition: TransitionKind;
+  private _lastTransition: TransitionKind | null = null;
   private readonly fadeSeconds: number;
   private readonly sourcePreference: "auto" | "buffer" | "element";
   private readonly bufferMaxBytes: number;
@@ -66,12 +70,22 @@ export class EkoWebEngine {
   private startCtxTime = 0;
   private startOffset = 0;
   private playRequested = false;
+  // Set while a gap-advance (`advanceWithGap`) is loading the next track from a standing
+  // start. During that window `_paused` is also forced true, so a consumer's own `pause()`
+  // call cannot register through the normal "already paused" early return; this flag lets
+  // it record intent anyway, so the advance does not resume playback against the consumer's
+  // wishes once the load settles.
+  private advancing = false;
+  private pauseRequestedDuringAdvance = false;
   private rafHandle: number | null = null;
 
   constructor(options: EkoWebEngineOptions = {}) {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
     this.gapless = options.gapless ?? DEFAULTS.gapless;
+    // `gapless: false` is the older spelling of `transition: "gap"`.
+    this.transition =
+      options.transition ?? (options.gapless === false ? "gap" : DEFAULTS.transition);
     this.fadeSeconds = options.fadeSeconds ?? DEFAULTS.fadeSeconds;
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
@@ -108,6 +122,10 @@ export class EkoWebEngine {
   }
   get currentIndex(): number {
     return this.index;
+  }
+  /** What happened at the most recent boundary, or null before the first one. */
+  get lastTransition(): TransitionKind | null {
+    return this._lastTransition;
   }
   get currentTime(): number {
     if (!this.current) return 0;
@@ -203,7 +221,13 @@ export class EkoWebEngine {
   }
 
   pause(): void {
-    if (this._paused) return;
+    if (this._paused) {
+      // Nothing audible to fade: either genuinely idle, or a gap-advance is mid-load and
+      // already forced `_paused` true. In the latter case record the intent so the advance
+      // does not resume playback once its load settles; see `advanceWithGap`.
+      if (this.advancing) this.pauseRequestedDuringAdvance = true;
+      return;
+    }
     const ctx = this.ctx!;
     const position = this.currentTime; // capture before the source stops
     // Ramp down, then stop on the ramp's last sample so the cut is silent.
@@ -247,13 +271,22 @@ export class EkoWebEngine {
 
   private async skipTo(index: number): Promise<void> {
     const wasPlaying = !this._paused;
-    this.stopSource();
+    if (wasPlaying) {
+      // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
+      // a manual skip is still an abrupt stop for the current track, so it must not click.
+      const ctx = this.ctx!;
+      const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
+      this.stopSource(rampEnd);
+    } else {
+      this.stopSource();
+    }
     this.clearArmed();
     this._paused = true;
     this.stopRaf();
     await this.loadIndex(index);
+    this._lastTransition = "gap";
     const track = this.queue[index];
-    if (track) this.emitter.emit("trackchange", { index, track });
+    if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
     if (wasPlaying) void this.play();
   }
 
@@ -306,7 +339,7 @@ export class EkoWebEngine {
   // ── Gapless internals ─────────────────────────────────────────────────────────
   /** Decode the next queued track and schedule it to start the instant this one ends. */
   private async armNext(): Promise<void> {
-    if (!this.gapless || this._paused || !this.current || !this.ctx) return;
+    if (this.transition !== "gapless" || this._paused || !this.current || !this.ctx) return;
     // A streaming source cannot be scheduled to a sample, so this boundary cannot be
     // gapless no matter what the next track is.
     if (!this.current.canGapless) return;
@@ -350,7 +383,7 @@ export class EkoWebEngine {
     this.armed = { loaded: next, index: nextIndex, startCtxTime: endCtxTime };
   }
 
-  /** A source reached its natural end — promote the armed next track, or end the queue. */
+  /** A source reached its natural end. Promote the armed track, advance with a gap, or stop. */
   private handleSourceEnded(): void {
     if (this.armed) {
       const armed = this.armed;
@@ -360,12 +393,40 @@ export class EkoWebEngine {
       this.index = armed.index;
       this.startCtxTime = armed.startCtxTime;
       this.startOffset = 0;
+      this._lastTransition = "gapless";
       this.emitter.emit("durationchange", { duration: armed.loaded.duration });
-      this.emitter.emit("trackchange", { index: armed.index, track: armed.loaded.track });
+      this.emitter.emit("trackchange", {
+        index: armed.index,
+        track: armed.loaded.track,
+        transition: "gapless",
+      });
       void this.armNext();
+    } else if (this.index + 1 < this.queue.length) {
+      // Nothing was armed: the policy asked for a gap, a streaming source was involved, or
+      // the prefetch failed. Advance anyway, and be honest that there was a gap.
+      void this.advanceWithGap(this.index + 1);
     } else {
       this.handleNaturalEnd();
     }
+  }
+
+  /** Load and play the given index from a standing start. The boundary is audibly a gap. */
+  private async advanceWithGap(index: number): Promise<void> {
+    this.stopRaf();
+    this._paused = true;
+    this.advancing = true;
+    await this.loadIndex(index);
+    this.advancing = false;
+    this._lastTransition = "gap";
+    const track = this.queue[index];
+    if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
+    if (this.pauseRequestedDuringAdvance) {
+      // The consumer asked to pause while this load was in flight. Honour that instead of
+      // resuming: the load already left the engine paused, so there is nothing more to do.
+      this.pauseRequestedDuringAdvance = false;
+      return;
+    }
+    await this.play();
   }
 
   private clearArmed(): void {
