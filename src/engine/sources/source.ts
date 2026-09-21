@@ -42,6 +42,16 @@ export interface LoadedSource {
   stop(when?: number): void;
   /** Called when the source reaches its natural end. Never called for an explicit stop. */
   onEnded(fn: () => void): void;
+  /**
+   * Called when a `start()` that appeared to succeed synchronously turns out to have
+   * failed asynchronously. Today only the element strategy can produce this: the browser
+   * silently blocking an `HTMLMediaElement.play()` call that did not originate from its
+   * own user gesture (notably iOS Safari), discovered only once that promise rejects.
+   * Wire this unconditionally, the same way `onEnded()` is always wired regardless of
+   * whether a given source can actually end on its own; strategies that cannot fail this
+   * way simply never call it.
+   */
+  onStartError(fn: (error: unknown) => void): void;
   dispose(): void;
 }
 

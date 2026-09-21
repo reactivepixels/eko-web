@@ -128,6 +128,12 @@ class BufferLoadedSource implements LoadedSource {
     this.endedFn = fn;
   }
 
+  /** A decoded buffer's start() is synchronous and cannot fail asynchronously, so this is
+   * stored but never called; it exists to satisfy the interface every strategy shares. */
+  onStartError(_fn: (error: unknown) => void): void {
+    // Intentionally a no-op.
+  }
+
   dispose(): void {
     this.disposed = true;
     this.stop();

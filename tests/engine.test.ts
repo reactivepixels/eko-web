@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
 import { EkoError } from "../src/engine/errors";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain } from "../src/engine/loudness";
-import { MockAudioContext, makeToneBuffer, stubFetch } from "./mock-audio";
+import { MockAudioContext, MockMediaElement, makeToneBuffer, stubFetch } from "./mock-audio";
 
 function makeEngine(buffer = makeToneBuffer(0.5), opts = {}) {
   const ctx = new MockAudioContext();
@@ -285,6 +285,49 @@ describe("EkoWebEngine destroy()", () => {
     expect(finalSnapshot.track).toBeNull();
     expect(finalSnapshot.index).toBe(-1);
     expect(notifications).toBe(1); // the final publish reached the subscriber exactly once
+  });
+});
+
+describe("EkoWebEngine element start failure", () => {
+  it("surfaces a coded autoplay_blocked error and corrects paused/state when the browser silently blocks play()", async () => {
+    const ctx = new MockAudioContext();
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+
+    const originalAudio = (globalThis as { Audio?: unknown }).Audio;
+    let element!: MockMediaElement;
+    (globalThis as { Audio?: unknown }).Audio = function (): MockMediaElement {
+      element = new MockMediaElement();
+      setTimeout(() => element.fireLoadedMetadata(120), 0);
+      return element;
+    } as unknown as typeof Audio;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const ready = whenReady(engine);
+      engine.setQueue([{ src: "/long.flac", source: "element" }]);
+      await ready;
+
+      // The browser silently blocks this without the element's own user gesture (the
+      // ordinary case on iOS Safari); play() itself never rejects for it.
+      element.play = () => Promise.reject(new Error("NotAllowedError"));
+
+      const errors: EkoError[] = [];
+      engine.on("error", ({ error }) => errors.push(error));
+      await expect(engine.play()).resolves.toBeUndefined();
+
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+
+      const blocked = errors.find((e) => e.code === "autoplay_blocked");
+      expect(blocked).toBeDefined();
+      expect(blocked!.recoverable).toBe(false);
+      // The engine corrects the record instead of reporting "playing" with silence.
+      expect(engine.paused).toBe(true);
+      expect(engine.state).not.toBe("playing");
+    } finally {
+      (globalThis as { Audio?: unknown }).Audio = originalAudio;
+      warnSpy.mockRestore();
+    }
   });
 });
 

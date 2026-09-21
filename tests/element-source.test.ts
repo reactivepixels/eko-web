@@ -189,4 +189,47 @@ describe("ElementSourceStrategy", () => {
     // Nothing silently resumed playback on the (now `src=""`) element either.
     expect(element.paused).toBe(true);
   });
+
+  it("reports an async start() failure through onStartError when play() rejects", async () => {
+    const { ctx, element, strategy } = setup();
+    const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
+    loaded.connect(new MockGainNode() as unknown as AudioNode);
+
+    const boom = new Error("NotAllowedError");
+    element.play = (): Promise<void> => Promise.reject(boom);
+
+    const errors: unknown[] = [];
+    loaded.onStartError((error) => errors.push(error));
+    loaded.start(0, 0);
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(errors).toEqual([boom]);
+  });
+
+  it("does not report a start error once the source has been disposed before play() rejects", async () => {
+    const { ctx, element, strategy } = setup();
+    const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
+    loaded.connect(new MockGainNode() as unknown as AudioNode);
+
+    let rejectPlay!: (error: unknown) => void;
+    element.play = (): Promise<void> =>
+      new Promise((_resolve, reject) => {
+        rejectPlay = reject;
+      });
+
+    const errors: unknown[] = [];
+    loaded.onStartError((error) => errors.push(error));
+    loaded.start(0, 0);
+    // The engine moved on (a pause, seek or skip) and disposed this source before the
+    // browser ever got back to us about the play() call it made.
+    loaded.dispose();
+    rejectPlay(new Error("too late to matter"));
+
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(errors).toEqual([]);
+  });
 });

@@ -113,6 +113,7 @@ class ElementLoadedSource implements LoadedSource {
 
   private endedFn: (() => void) | null = null;
   private readonly onElementEnded = (): void => this.endedFn?.();
+  private startErrorFn: ((error: unknown) => void) | null = null;
   private disposed = false;
 
   constructor(
@@ -156,7 +157,16 @@ class ElementLoadedSource implements LoadedSource {
       throw new EkoError("destroyed", "eko-web: cannot start a source that has been disposed.");
     }
     this.element.currentTime = offset;
-    void this.element.play();
+    // The browser can silently reject this without a user gesture (notably iOS Safari),
+    // well after start() itself has already returned and the engine has already reported
+    // "playing". Report that failure through onStartError() instead of swallowing it, so
+    // the engine can correct the record instead of leaving silence with nothing to explain
+    // it. A stale rejection arriving after this source has since been disposed (a pause,
+    // seek or skip before the browser's promise settles) is a no-op: dispose() below
+    // already clears `startErrorFn`, so there is nobody left to report to.
+    this.element.play().catch((error: unknown) => {
+      this.startErrorFn?.(error);
+    });
   }
 
   stop(_when?: number): void {
@@ -167,6 +177,10 @@ class ElementLoadedSource implements LoadedSource {
     this.endedFn = fn;
   }
 
+  onStartError(fn: (error: unknown) => void): void {
+    this.startErrorFn = fn;
+  }
+
   dispose(): void {
     this.disposed = true;
     this.element.removeEventListener("ended", this.onElementEnded);
@@ -174,5 +188,6 @@ class ElementLoadedSource implements LoadedSource {
     this.element.src = "";
     this.node.disconnect();
     this.endedFn = null;
+    this.startErrorFn = null;
   }
 }

@@ -272,6 +272,7 @@ export class EkoWebEngine {
       }
       loaded.connect(this.graph!.input);
       loaded.onEnded(() => this.handleSourceEnded());
+      loaded.onStartError((error) => this.handleStartError(error));
       this.current?.dispose();
       this.current = loaded;
       this.index = index;
@@ -645,6 +646,26 @@ export class EkoWebEngine {
     this.setState("ended");
     this.emitter.emit("timeupdate", { currentTime: this.duration, duration: this.duration });
     this.emitter.emit("ended");
+  }
+
+  /**
+   * A `start()` that appeared to succeed turns out to have failed asynchronously (today:
+   * only the element strategy's `play()` promise rejecting, most often because the browser
+   * required its own user gesture, e.g. iOS Safari). By the time this fires the engine has
+   * already reported "playing" with nothing actually audible; correct that the same way
+   * `ctx.resume()` rejecting already does, rather than leaving silence unexplained.
+   */
+  private handleStartError(error: unknown): void {
+    this.stopRaf();
+    this._paused = true;
+    this.setState("paused");
+    this.emitter.emit("error", {
+      error: new EkoError(
+        "autoplay_blocked",
+        "eko-web: the browser blocked playback. Call play() from a user gesture.",
+        { cause: error },
+      ),
+    });
   }
 
   // ── Source / graph internals ──────────────────────────────────────────────────
