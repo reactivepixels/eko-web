@@ -17,7 +17,8 @@ export type RepeatMode = "none" | "one" | "all";
  *   same. If the armed track and the advanced-to track disagree, the wrong song plays.
  *
  * Both fall out of keeping the bag already refilled: `advance()` refills it the moment it
- * empties, so `peekNext()` is only ever a read.
+ * empties under repeat "all", and the `repeat` setter tops it up too when a switch INTO
+ * "all" is itself what makes the bag relevant again, so `peekNext()` is only ever a read.
  */
 export class EkoQueue {
   private tracks: EkoTrack[] = [];
@@ -65,6 +66,13 @@ export class EkoQueue {
   }
 
   set repeat(mode: RepeatMode) {
+    // Switching INTO "all" over an empty shuffle bag is the one other moment (besides
+    // advance() itself) that makes the bag relevant again: with repeat "none" or "one" an
+    // empty bag is a dead end by design, but "all" promises the queue keeps going, and
+    // nothing else will ever refill it once it is set. Conditioned on the bag actually
+    // being empty, so a mid-pass flip does not reset the pass and replay tracks already
+    // drawn in it.
+    if (mode === "all" && this._shuffle && this.bag.length === 0) this.refillBag();
     this._repeat = mode;
   }
 

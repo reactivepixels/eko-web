@@ -159,6 +159,21 @@ describe("EkoQueue shuffle", () => {
     expect(q.advance()).toBeNull();
   });
 
+  it('setting repeat to "all" after a shuffled bag has drained under repeat "none" revives it', () => {
+    const q = make(4);
+    q.shuffle = true;
+    q.advance();
+    q.advance();
+    q.advance();
+    // Bag is now empty: repeat "none" has nothing left to offer.
+    expect(q.peekNext()).toBeNull();
+    q.repeat = "all";
+    // Flipping to "all" over an empty bag must refill it immediately, or the queue can
+    // never recover: nothing else touches the bag from here.
+    expect(q.peekNextIndex()).not.toBe(-1);
+    expect(q.advance()).not.toBeNull();
+  });
+
   it("turning shuffle off returns to sequential order from where it is", () => {
     const q = make(5);
     q.shuffle = true;
