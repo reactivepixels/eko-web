@@ -22,3 +22,11 @@ export { EkoWebEngine } from "./engine/eko-web-engine";
 
 export { EkoError } from "./engine/errors";
 export type { EkoErrorCode, EkoErrorOptions } from "./engine/errors";
+
+export type {
+  SourceKind,
+  LoadOptions,
+  LoadedSource,
+  AudioSourceStrategy,
+} from "./engine/sources/source";
+export { BufferSourceStrategy } from "./engine/sources/buffer-source";

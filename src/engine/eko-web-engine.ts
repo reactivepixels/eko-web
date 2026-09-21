@@ -1,9 +1,10 @@
 import { Emitter } from "./event-emitter";
 import { EkoError, type EkoErrorCode } from "./errors";
 import { EkoGraph } from "./graph";
-import { measureLoudnessLufs, samplePeak, computeNormalizationGain, dbToLinear } from "./loudness";
 import { trackEndTime } from "./scheduling";
 import { rampTo, DEFAULT_FADE_SECONDS } from "./fades";
+import { BufferSourceStrategy } from "./sources/buffer-source";
+import type { AudioSourceStrategy, LoadedSource } from "./sources/source";
 import type {
   EkoTrack,
   EkoState,
@@ -12,18 +13,9 @@ import type {
   EkoEventListener,
 } from "../types";
 
-interface DecodedTrack {
-  track: EkoTrack;
-  buffer: AudioBuffer;
-  /** Linear normalization gain to apply (1 = none). */
-  normGain: number;
-  duration: number;
-}
-
-/** The next track, decoded and scheduled to start at exactly `startCtxTime` (gapless). */
+/** The next track, loaded and scheduled to start at exactly `startCtxTime` (gapless). */
 interface ArmedTrack {
-  decoded: DecodedTrack;
-  source: AudioBufferSourceNode;
+  loaded: LoadedSource;
   index: number;
   startCtxTime: number;
 }
@@ -55,8 +47,8 @@ export class EkoWebEngine {
 
   private queue: EkoTrack[] = [];
   private index = -1;
-  private decoded: DecodedTrack | null = null;
-  private source: AudioBufferSourceNode | null = null;
+  private strategy: AudioSourceStrategy = new BufferSourceStrategy();
+  private current: LoadedSource | null = null;
   private armed: ArmedTrack | null = null;
 
   private _state: EkoState = "idle";
@@ -68,7 +60,6 @@ export class EkoWebEngine {
   // offset `startOffset` (seconds).
   private startCtxTime = 0;
   private startOffset = 0;
-  private endedByStop = false;
   private playRequested = false;
   private rafHandle: number | null = null;
 
@@ -106,16 +97,16 @@ export class EkoWebEngine {
     return { normalize: this.normalize, targetLufs: this.targetLufs, gapless: this.gapless };
   }
   get duration(): number {
-    return this.decoded?.duration ?? 0;
+    return this.current?.duration ?? 0;
   }
   get currentIndex(): number {
     return this.index;
   }
   get currentTime(): number {
-    if (!this.decoded) return 0;
+    if (!this.current) return 0;
     if (this._paused || !this.ctx) return this.startOffset;
     const t = this.startOffset + (this.ctx.currentTime - this.startCtxTime);
-    return Math.max(0, Math.min(t, this.decoded.duration));
+    return Math.max(0, Math.min(t, this.current.duration));
   }
 
   // ── Queue / load ────────────────────────────────────────────────────────────
@@ -138,13 +129,16 @@ export class EkoWebEngine {
     this.setState("loading");
     this.emitter.emit("loadstart", { index });
     try {
-      const decoded = await this.decodeTrack(track);
-      this.decoded = decoded;
+      const loaded = await this.loadTrack(track);
+      loaded.connect(this.graph!.input);
+      loaded.onEnded(() => this.handleSourceEnded());
+      this.current?.dispose();
+      this.current = loaded;
       this.index = index;
       this.startOffset = 0;
       this.setState("ready");
-      this.emitter.emit("loadedmetadata", { index, duration: decoded.duration });
-      this.emitter.emit("durationchange", { duration: decoded.duration });
+      this.emitter.emit("loadedmetadata", { index, duration: loaded.duration });
+      this.emitter.emit("durationchange", { duration: loaded.duration });
       this.emitter.emit("canplay", { index });
       if (this.playRequested) {
         this.playRequested = false;
@@ -156,50 +150,12 @@ export class EkoWebEngine {
     }
   }
 
-  private async decodeTrack(track: EkoTrack): Promise<DecodedTrack> {
+  private loadTrack(track: EkoTrack): Promise<LoadedSource> {
     const ctx = this.ensureGraph();
-
-    let arr: ArrayBuffer;
-    try {
-      const res = await fetch(track.src);
-      if (!res.ok) {
-        throw new EkoError(
-          "fetch_failed",
-          `eko-web: fetch failed for ${track.src} (${res.status})`,
-        );
-      }
-      arr = await res.arrayBuffer();
-    } catch (cause) {
-      if (cause instanceof EkoError) throw cause;
-      throw new EkoError("fetch_failed", `eko-web: fetch failed for ${track.src}`, { cause });
-    }
-
-    let buffer: AudioBuffer;
-    try {
-      buffer = await ctx.decodeAudioData(arr);
-    } catch (cause) {
-      throw new EkoError("decode_failed", `eko-web: could not decode ${track.src}`, { cause });
-    }
-
-    return {
-      track,
-      buffer,
-      normGain: this.computeNormGain(track, buffer),
-      duration: buffer.duration,
-    };
-  }
-
-  private computeNormGain(track: EkoTrack, buffer: AudioBuffer): number {
-    if (!this.normalize) return 1;
-    const channels = channelsOf(buffer);
-    const peak = samplePeak(channels);
-    // Prefer an embedded/precomputed gain; else measure loudness from the decoded buffer.
-    if (typeof track.gainDb === "number") {
-      const g = dbToLinear(track.gainDb);
-      return peak > 0 ? Math.min(g, 1 / peak) : g;
-    }
-    const lufs = measureLoudnessLufs(channels, buffer.sampleRate);
-    return computeNormalizationGain(lufs, this.targetLufs, peak);
+    return this.strategy.load(track, ctx, {
+      normalize: this.normalize,
+      targetLufs: this.targetLufs,
+    });
   }
 
   // ── Transport ───────────────────────────────────────────────────────────────
@@ -221,7 +177,7 @@ export class EkoWebEngine {
         return;
       }
     }
-    if (!this.decoded) {
+    if (!this.current) {
       // Play as soon as the current track finishes decoding.
       this.playRequested = true;
       return;
@@ -251,8 +207,8 @@ export class EkoWebEngine {
   }
 
   seek(time: number): void {
-    if (!this.decoded) return;
-    const t = Math.max(0, Math.min(time, this.decoded.duration));
+    if (!this.current) return;
+    const t = Math.max(0, Math.min(time, this.current.duration));
     if (this._paused) {
       this.startOffset = t;
     } else {
@@ -265,7 +221,7 @@ export class EkoWebEngine {
       this.startSource(t, rampEnd);
       void this.armNext(); // re-arm from the new position
     }
-    this.emitter.emit("timeupdate", { currentTime: t, duration: this.decoded.duration });
+    this.emitter.emit("timeupdate", { currentTime: t, duration: this.current.duration });
   }
 
   /** Skip to the next track (manual — a small decode gap is acceptable here). */
@@ -327,6 +283,8 @@ export class EkoWebEngine {
 
   destroy(): void {
     this.teardown();
+    this.current?.dispose();
+    this.current = null;
     this.emitter.clear();
     this.graph?.destroy();
     this.graph = null;
@@ -337,18 +295,18 @@ export class EkoWebEngine {
   // ── Gapless internals ─────────────────────────────────────────────────────────
   /** Decode the next queued track and schedule it to start the instant this one ends. */
   private async armNext(): Promise<void> {
-    if (!this.gapless || this._paused || !this.decoded || !this.ctx) return;
+    if (!this.gapless || this._paused || !this.current || !this.ctx) return;
     const nextIndex = this.index + 1;
     if (nextIndex >= this.queue.length || this.armed) return;
     const track = this.queue[nextIndex];
     if (!track) return;
 
     // The boundary is fixed once the current source started (start time + offset).
-    const endCtxTime = trackEndTime(this.startCtxTime, this.decoded.duration, this.startOffset);
+    const endCtxTime = trackEndTime(this.startCtxTime, this.current.duration, this.startOffset);
 
-    let next: DecodedTrack;
+    let next: LoadedSource;
     try {
-      next = await this.decodeTrack(track);
+      next = await this.loadTrack(track);
     } catch (cause) {
       // Recoverable: the current track keeps playing, the boundary degrades to a gap.
       this.emitter.emit("error", {
@@ -360,19 +318,17 @@ export class EkoWebEngine {
       });
       return;
     }
-    // Bail if playback moved on while we were decoding (pause / seek / skip / re-arm).
-    if (this._paused || !this.ctx || this.index !== nextIndex - 1 || this.armed) return;
+    if (this._paused || !this.ctx || this.index !== nextIndex - 1 || this.armed) {
+      next.dispose();
+      return;
+    }
 
-    const source = this.ctx.createBufferSource();
-    source.buffer = next.buffer;
-    source.connect(this.graph!.input);
-    source.onended = (): void => {
-      if (!this.endedByStop) this.handleSourceEnded();
-    };
-    source.start(endCtxTime, 0);
+    next.connect(this.graph!.input);
+    next.onEnded(() => this.handleSourceEnded());
+    next.start(endCtxTime, 0);
     // Jump the shared normalization gain to the next track's value exactly at the boundary.
     this.graph!.rgGain.gain.setValueAtTime(next.normGain, endCtxTime);
-    this.armed = { decoded: next, source, index: nextIndex, startCtxTime: endCtxTime };
+    this.armed = { loaded: next, index: nextIndex, startCtxTime: endCtxTime };
   }
 
   /** A source reached its natural end — promote the armed next track, or end the queue. */
@@ -380,13 +336,13 @@ export class EkoWebEngine {
     if (this.armed) {
       const armed = this.armed;
       this.armed = null;
-      this.decoded = armed.decoded;
-      this.source = armed.source;
+      this.current?.dispose();
+      this.current = armed.loaded;
       this.index = armed.index;
       this.startCtxTime = armed.startCtxTime;
       this.startOffset = 0;
-      this.emitter.emit("durationchange", { duration: armed.decoded.duration });
-      this.emitter.emit("trackchange", { index: armed.index, track: armed.decoded.track });
+      this.emitter.emit("durationchange", { duration: armed.loaded.duration });
+      this.emitter.emit("trackchange", { index: armed.index, track: armed.loaded.track });
       void this.armNext();
     } else {
       this.handleNaturalEnd();
@@ -395,25 +351,19 @@ export class EkoWebEngine {
 
   private clearArmed(): void {
     if (this.armed) {
-      try {
-        this.armed.source.stop();
-      } catch {
-        /* not started */
-      }
-      this.armed.source.disconnect();
+      this.armed.loaded.dispose();
       this.armed = null;
     }
     if (this.ctx && this.graph) {
       this.graph.rgGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      if (this.decoded) this.graph.rgGain.gain.value = this.decoded.normGain;
+      if (this.current) this.graph.rgGain.gain.value = this.current.normGain;
     }
   }
 
   private handleNaturalEnd(): void {
     this.stopRaf();
     this._paused = true;
-    this.source = null;
-    this.startOffset = this.decoded?.duration ?? 0;
+    this.startOffset = this.current?.duration ?? 0;
     this.setState("ended");
     this.emitter.emit("timeupdate", { currentTime: this.duration, duration: this.duration });
     this.emitter.emit("ended");
@@ -431,18 +381,10 @@ export class EkoWebEngine {
 
   private startSource(offset: number, when?: number): void {
     const ctx = this.ctx!;
-    const decoded = this.decoded!;
+    const current = this.current!;
     const at = when ?? ctx.currentTime;
-    const source = ctx.createBufferSource();
-    source.buffer = decoded.buffer;
-    this.graph!.rgGain.gain.value = decoded.normGain;
-    source.connect(this.graph!.input);
-    this.endedByStop = false;
-    source.onended = (): void => {
-      if (!this.endedByStop) this.handleSourceEnded();
-    };
-    source.start(at, offset);
-    this.source = source;
+    this.graph!.rgGain.gain.value = current.normGain;
+    current.start(at, offset);
     this.startCtxTime = at;
     this.startOffset = offset;
 
@@ -454,19 +396,7 @@ export class EkoWebEngine {
   }
 
   private stopSource(when?: number): void {
-    const source = this.source;
-    if (!source) return;
-    this.endedByStop = true;
-    this.source = null;
-    try {
-      if (when === undefined) source.stop();
-      else source.stop(when);
-    } catch {
-      /* already stopped */
-    }
-    // Disconnect only once it has really stopped. Disconnecting now would silence the
-    // node mid-ramp, which is exactly the click this fade exists to remove.
-    source.onended = (): void => source.disconnect();
+    this.current?.stop(when);
   }
 
   /** Stop both the current and armed sources (used by pause/seek/skip/destroy). */
@@ -496,12 +426,6 @@ export class EkoWebEngine {
     }
     this.rafHandle = null;
   }
-}
-
-function channelsOf(buffer: AudioBuffer): Float32Array[] {
-  const channels: Float32Array[] = [];
-  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
-  return channels;
 }
 
 function createAudioContext(): AudioContext {
