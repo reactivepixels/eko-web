@@ -8,6 +8,14 @@ export class MockParam {
   scheduled: Array<{ value: number; time: number }> = [];
   /** Linear ramps, in the order they were scheduled. */
   ramps: Array<{ value: number; time: number }> = [];
+  /** The value before any automation event — what `valueAt` holds before the first event. */
+  private readonly initialValue: number;
+
+  constructor(initialValue = 1) {
+    this.value = initialValue;
+    this.initialValue = initialValue;
+  }
+
   setValueAtTime(value: number, time: number): this {
     this.scheduled.push({ value, time });
     this.value = value;
@@ -17,10 +25,41 @@ export class MockParam {
     this.ramps.push({ value, time });
     return this;
   }
-  cancelScheduledValues(_time: number): this {
-    this.scheduled = [];
-    this.ramps = [];
+  /** Real AudioParams only drop events scheduled at or after `time`; events before it stand. */
+  cancelScheduledValues(time: number): this {
+    this.scheduled = this.scheduled.filter((e) => e.time < time);
+    this.ramps = this.ramps.filter((e) => e.time < time);
     return this;
+  }
+
+  /**
+   * Play the event list forward and return the value at `t`: hold the value of the last
+   * `setValueAtTime` at or before `t`, linearly interpolate across a `linearRampToValueAtTime`
+   * that spans `t`, and hold the initial value before any event. This is what makes a gain
+   * envelope (a fade) actually assertable in a test, instead of only asserting the raw
+   * schedule calls happened.
+   */
+  valueAt(t: number): number {
+    type Point = { time: number; value: number; kind: "set" | "ramp" };
+    const points: Point[] = [
+      ...this.scheduled.map((e) => ({ ...e, kind: "set" as const })),
+      ...this.ramps.map((e) => ({ ...e, kind: "ramp" as const })),
+    ].sort((a, b) => a.time - b.time);
+
+    let last: Point = { time: -Infinity, value: this.initialValue, kind: "set" };
+    for (const p of points) {
+      if (t < p.time) {
+        if (p.kind === "ramp" && last.time > -Infinity) {
+          const span = p.time - last.time;
+          if (span <= 0) return p.value;
+          const frac = (t - last.time) / span;
+          return last.value + (p.value - last.value) * frac;
+        }
+        return last.value;
+      }
+      last = p;
+    }
+    return last.value;
   }
 }
 
