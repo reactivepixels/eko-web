@@ -3,6 +3,7 @@ import { EkoError, type EkoErrorCode } from "./errors";
 import { EkoGraph } from "./graph";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain, dbToLinear } from "./loudness";
 import { trackEndTime } from "./scheduling";
+import { rampTo, DEFAULT_FADE_SECONDS } from "./fades";
 import type {
   EkoTrack,
   EkoState,
@@ -27,7 +28,12 @@ interface ArmedTrack {
   startCtxTime: number;
 }
 
-const DEFAULTS = { normalize: true, targetLufs: -16, gapless: true };
+const DEFAULTS = {
+  normalize: true,
+  targetLufs: -16,
+  gapless: true,
+  fadeSeconds: DEFAULT_FADE_SECONDS,
+};
 
 /**
  * Web Audio playback engine: decode-to-buffer playback through a gain graph
@@ -41,6 +47,7 @@ export class EkoWebEngine {
   private readonly normalize: boolean;
   private readonly targetLufs: number;
   private readonly gapless: boolean;
+  private readonly fadeSeconds: number;
   private readonly injectedContext?: AudioContext;
 
   private ctx: AudioContext | null = null;
@@ -69,6 +76,7 @@ export class EkoWebEngine {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
     this.gapless = options.gapless ?? DEFAULTS.gapless;
+    this.fadeSeconds = options.fadeSeconds ?? DEFAULTS.fadeSeconds;
     this.injectedContext = options.context;
   }
 
@@ -229,10 +237,13 @@ export class EkoWebEngine {
 
   pause(): void {
     if (this._paused) return;
-    const t = this.currentTime; // capture before stopping the source
-    this.stopSource();
+    const ctx = this.ctx!;
+    const position = this.currentTime; // capture before the source stops
+    // Ramp down, then stop on the ramp's last sample so the cut is silent.
+    const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
+    this.stopSource(rampEnd);
     this.clearArmed();
-    this.startOffset = t;
+    this.startOffset = position;
     this._paused = true;
     this.setState("paused");
     this.stopRaf();
@@ -245,9 +256,13 @@ export class EkoWebEngine {
     if (this._paused) {
       this.startOffset = t;
     } else {
-      this.stopSource();
+      const ctx = this.ctx!;
+      // Ramp out, cut at the ramp end, and start the new position there. startSource
+      // fades back in from silence, so the seek is inaudible in both directions.
+      const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
+      this.stopSource(rampEnd);
       this.clearArmed();
-      this.startSource(t);
+      this.startSource(t, rampEnd);
       void this.armNext(); // re-arm from the new position
     }
     this.emitter.emit("timeupdate", { currentTime: t, duration: this.decoded.duration });
@@ -414,9 +429,10 @@ export class EkoWebEngine {
     return ctx;
   }
 
-  private startSource(offset: number): void {
+  private startSource(offset: number, when?: number): void {
     const ctx = this.ctx!;
     const decoded = this.decoded!;
+    const at = when ?? ctx.currentTime;
     const source = ctx.createBufferSource();
     source.buffer = decoded.buffer;
     this.graph!.rgGain.gain.value = decoded.normGain;
@@ -425,22 +441,32 @@ export class EkoWebEngine {
     source.onended = (): void => {
       if (!this.endedByStop) this.handleSourceEnded();
     };
-    source.start(0, offset);
+    source.start(at, offset);
     this.source = source;
-    this.startCtxTime = ctx.currentTime;
+    this.startCtxTime = at;
     this.startOffset = offset;
+
+    // Fade in from silence so starting mid-waveform does not click.
+    const fade = this.graph!.fadeGain.gain;
+    fade.cancelScheduledValues(at);
+    fade.setValueAtTime(0, at);
+    fade.linearRampToValueAtTime(1, at + this.fadeSeconds);
   }
 
-  private stopSource(): void {
-    if (!this.source) return;
+  private stopSource(when?: number): void {
+    const source = this.source;
+    if (!source) return;
     this.endedByStop = true;
+    this.source = null;
     try {
-      this.source.stop();
+      if (when === undefined) source.stop();
+      else source.stop(when);
     } catch {
       /* already stopped */
     }
-    this.source.disconnect();
-    this.source = null;
+    // Disconnect only once it has really stopped. Disconnecting now would silence the
+    // node mid-ramp, which is exactly the click this fade exists to remove.
+    source.onended = (): void => source.disconnect();
   }
 
   /** Stop both the current and armed sources (used by pause/seek/skip/destroy). */

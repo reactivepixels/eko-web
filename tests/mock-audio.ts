@@ -6,12 +6,20 @@
 export class MockParam {
   value = 1;
   scheduled: Array<{ value: number; time: number }> = [];
+  /** Linear ramps, in the order they were scheduled. */
+  ramps: Array<{ value: number; time: number }> = [];
   setValueAtTime(value: number, time: number): this {
     this.scheduled.push({ value, time });
+    this.value = value;
+    return this;
+  }
+  linearRampToValueAtTime(value: number, time: number): this {
+    this.ramps.push({ value, time });
     return this;
   }
   cancelScheduledValues(_time: number): this {
     this.scheduled = [];
+    this.ramps = [];
     return this;
   }
 }
@@ -48,6 +56,7 @@ export class MockBufferSource {
   stopped = false;
   startWhen = 0;
   startOffset = 0;
+  stopWhen: number | null = null;
   connect(): void {}
   disconnect(): void {}
   start(when = 0, offset = 0): void {
@@ -55,8 +64,9 @@ export class MockBufferSource {
     this.startWhen = when;
     this.startOffset = offset;
   }
-  stop(): void {
+  stop(when?: number): void {
     this.stopped = true;
+    this.stopWhen = when ?? null;
   }
   /** Test helper: simulate the buffer reaching its natural end. */
   fireEnded(): void {

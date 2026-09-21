@@ -29,6 +29,11 @@ export interface EkoWebEngineOptions {
    * created lazily on first `play()` (so it's tied to a user gesture per autoplay policy).
    */
   context?: AudioContext;
+  /**
+   * Seconds for the click-removal ramp on play, pause and seek. Default: `0.01`. Raise it
+   * for an audible fade; do not set it to 0 unless you want clicks.
+   */
+  fadeSeconds?: number;
 }
 
 /**
