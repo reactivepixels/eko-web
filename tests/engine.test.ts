@@ -565,3 +565,47 @@ describe("EkoWebEngine: setQueue([]) clears the engine (I3)", () => {
     expect(snapshot.paused).toBe(true);
   });
 });
+
+describe("EkoWebEngine: index/track agreement during a manual skip's load window (I5)", () => {
+  it("sources track from the queue's target while the load is in flight, not the still-loaded track", async () => {
+    restoreFetch = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    let decodeCount = 0;
+    let releaseSecondDecode: (() => void) | null = null;
+    ctx.decodeAudioData = async () => {
+      decodeCount++;
+      if (decodeCount === 2) {
+        // Hang the second decode (triggered by next()) until the test releases it, so the
+        // load window can actually be observed instead of racing past it.
+        await new Promise<void>((res) => {
+          releaseSecondDecode = res;
+        });
+      }
+      if (!ctx.nextBuffer) throw new Error("mock: no nextBuffer set");
+      return ctx.nextBuffer;
+    };
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+    ]);
+    await ready;
+
+    engine.next();
+    // Flush the microtask queue so the second load actually reaches its (now hanging)
+    // decode call, landing the engine mid-skip.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(engine.state).toBe("loading");
+    const snapshot = engine.getSnapshot();
+    // The queue already moved to b (next() moves it eagerly); track must agree, not still
+    // report a's title/id against b's index.
+    expect(snapshot.index).toBe(1);
+    expect(snapshot.track?.id).toBe("b");
+
+    releaseSecondDecode!();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+});

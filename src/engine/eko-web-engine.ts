@@ -173,7 +173,13 @@ export class EkoWebEngine {
       paused: this._paused,
       index: this.tracks.currentIndex,
       queueLength: this.tracks.length,
-      track: this.current?.track ?? this.tracks.current ?? null,
+      // While a load is in flight the queue has already moved (next()/previous() move it
+      // eagerly, before the load even starts) but `current` has not: it is only replaced
+      // once the load lands. Sourcing `track` from the queue during that window keeps it
+      // paired with `index`, which comes from the same place; otherwise a consumer binding
+      // a title to `snapshot.track` shows the outgoing track's title against the incoming
+      // track's index for the whole decode.
+      track: this.loading ? this.tracks.current : (this.current?.track ?? null),
       duration: this.current?.duration ?? 0,
       volume: this._volume,
       muted: this._muted,
