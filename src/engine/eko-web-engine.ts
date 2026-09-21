@@ -1,5 +1,6 @@
 import { Emitter } from "./event-emitter";
 import { EkoError, type EkoErrorCode } from "./errors";
+import { EkoGraph } from "./graph";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain, dbToLinear } from "./loudness";
 import { trackEndTime } from "./scheduling";
 import type {
@@ -43,9 +44,7 @@ export class EkoWebEngine {
   private readonly injectedContext?: AudioContext;
 
   private ctx: AudioContext | null = null;
-  private rgGain: GainNode | null = null;
-  private fadeGain: GainNode | null = null;
-  private userGain: GainNode | null = null;
+  private graph: EkoGraph | null = null;
 
   private queue: EkoTrack[] = [];
   private index = -1;
@@ -278,19 +277,44 @@ export class EkoWebEngine {
 
   setVolume(v: number): void {
     this._volume = Math.max(0, Math.min(1, v));
-    if (this.userGain && !this._muted) this.userGain.gain.value = this._volume;
+    if (this.graph && !this._muted) this.graph.userGain.gain.value = this._volume;
     this.emitter.emit("volumechange", { volume: this._volume, muted: this._muted });
   }
 
   setMuted(muted: boolean): void {
     this._muted = muted;
-    if (this.userGain) this.userGain.gain.value = muted ? 0 : this._volume;
+    if (this.graph) this.graph.userGain.gain.value = muted ? 0 : this._volume;
     this.emitter.emit("volumechange", { volume: this._volume, muted: this._muted });
+  }
+
+  /** The engine's AudioContext, so consumers can build nodes to insert. */
+  get context(): AudioContext {
+    return this.ensureGraph();
+  }
+
+  /**
+   * An AnalyserNode on the output, for spectrum and waveform displays. Created on first
+   * access. The library exposes the data, never a canvas.
+   */
+  get analyser(): AnalyserNode {
+    this.ensureGraph();
+    return this.graph!.analyser;
+  }
+
+  /**
+   * Insert your own nodes (an EQ, a compressor) after normalization and before the fader.
+   * Pass an empty array to remove them. Inserts survive track changes.
+   */
+  setInserts(nodes: AudioNode[]): void {
+    this.ensureGraph();
+    this.graph!.setInserts(nodes);
   }
 
   destroy(): void {
     this.teardown();
     this.emitter.clear();
+    this.graph?.destroy();
+    this.graph = null;
     if (this.ctx && !this.injectedContext) void this.ctx.close();
     this.ctx = null;
   }
@@ -326,13 +350,13 @@ export class EkoWebEngine {
 
     const source = this.ctx.createBufferSource();
     source.buffer = next.buffer;
-    source.connect(this.rgGain!);
+    source.connect(this.graph!.input);
     source.onended = (): void => {
       if (!this.endedByStop) this.handleSourceEnded();
     };
     source.start(endCtxTime, 0);
     // Jump the shared normalization gain to the next track's value exactly at the boundary.
-    this.rgGain!.gain.setValueAtTime(next.normGain, endCtxTime);
+    this.graph!.rgGain.gain.setValueAtTime(next.normGain, endCtxTime);
     this.armed = { decoded: next, source, index: nextIndex, startCtxTime: endCtxTime };
   }
 
@@ -364,9 +388,9 @@ export class EkoWebEngine {
       this.armed.source.disconnect();
       this.armed = null;
     }
-    if (this.ctx && this.rgGain) {
-      this.rgGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      if (this.decoded) this.rgGain.gain.value = this.decoded.normGain;
+    if (this.ctx && this.graph) {
+      this.graph.rgGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      if (this.decoded) this.graph.rgGain.gain.value = this.decoded.normGain;
     }
   }
 
@@ -382,16 +406,11 @@ export class EkoWebEngine {
 
   // ── Source / graph internals ──────────────────────────────────────────────────
   private ensureGraph(): AudioContext {
-    if (this.ctx) return this.ctx;
+    if (this.ctx && this.graph) return this.ctx;
     const ctx = this.injectedContext ?? createAudioContext();
     this.ctx = ctx;
-    this.rgGain = ctx.createGain();
-    this.fadeGain = ctx.createGain();
-    this.userGain = ctx.createGain();
-    this.rgGain.connect(this.fadeGain);
-    this.fadeGain.connect(this.userGain);
-    this.userGain.connect(ctx.destination);
-    this.userGain.gain.value = this._muted ? 0 : this._volume;
+    this.graph = new EkoGraph(ctx);
+    this.graph.userGain.gain.value = this._muted ? 0 : this._volume;
     return ctx;
   }
 
@@ -400,8 +419,8 @@ export class EkoWebEngine {
     const decoded = this.decoded!;
     const source = ctx.createBufferSource();
     source.buffer = decoded.buffer;
-    this.rgGain!.gain.value = decoded.normGain;
-    source.connect(this.rgGain!);
+    this.graph!.rgGain.gain.value = decoded.normGain;
+    source.connect(this.graph!.input);
     this.endedByStop = false;
     source.onended = (): void => {
       if (!this.endedByStop) this.handleSourceEnded();

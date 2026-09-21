@@ -18,8 +18,27 @@ export class MockParam {
 
 export class MockGainNode {
   gain = new MockParam();
-  connect(): void {}
-  disconnect(): void {}
+  /** Everything this node is currently connected to, in connect order. */
+  connections: unknown[] = [];
+  connect(destination?: unknown): void {
+    this.connections.push(destination);
+  }
+  disconnect(): void {
+    this.connections = [];
+  }
+}
+
+export class MockAnalyserNode {
+  fftSize = 2048;
+  frequencyBinCount = 1024;
+  connections: unknown[] = [];
+  connect(destination?: unknown): void {
+    this.connections.push(destination);
+  }
+  disconnect(): void {
+    this.connections = [];
+  }
+  getByteFrequencyData(_array: Uint8Array): void {}
 }
 
 export class MockBufferSource {
@@ -72,11 +91,18 @@ export class MockAudioContext {
   sources: MockBufferSource[] = [];
   /** The buffer the next decodeAudioData resolves to. */
   nextBuffer: MockAudioBuffer | null = null;
+  /** Every analyser created. Empty until something touches `graph.analyser`. */
+  analysers: MockAnalyserNode[] = [];
 
   createGain(): MockGainNode {
     const g = new MockGainNode();
     this.gains.push(g);
     return g;
+  }
+  createAnalyser(): MockAnalyserNode {
+    const a = new MockAnalyserNode();
+    this.analysers.push(a);
+    return a;
   }
   createBufferSource(): MockBufferSource {
     const s = new MockBufferSource();
