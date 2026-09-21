@@ -200,7 +200,18 @@ export class EkoWebEngine {
     // this new queue owns now.
     this.advanceToken++;
     const token = this.advanceToken;
-    this.teardown();
+    if (!this._paused && this.current) {
+      // A track is actively playing and setQueue() (or load(), or the facade's `src`
+      // setter, which both funnel through here) is about to cut it out from under the
+      // listener. Fade it out the same shape pause/seek/skip already use, instead of a
+      // hard cut. destroy() below uses the plain teardown() instead: the context is
+      // closing there, so a scheduled fade has nobody left to reach.
+      this.fadeOutAndStop();
+    } else {
+      this.stopSource();
+    }
+    this.clearArmed();
+    this.stopRaf();
     this.queue = tracks.slice();
     this.index = tracks.length > 0 ? 0 : -1;
     this._paused = true;

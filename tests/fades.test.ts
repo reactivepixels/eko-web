@@ -147,4 +147,56 @@ describe("engine fades", () => {
     expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 0, time: 0.15 + DEFAULT_FADE_SECONDS });
     expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.15 + DEFAULT_FADE_SECONDS, 6);
   });
+
+  it("fades out a playing track instead of cutting it when setQueue() replaces the queue", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+
+    ctx.currentTime = 0.12;
+    engine.setQueue([{ src: "/c.flac" }]);
+
+    // The outgoing source is ramped out and stopped on the ramp's last sample, not cut
+    // with no `when` (teardown()'s plain stopSource(), which is what destroy() still uses
+    // since there is nobody left to hear a fade once the context is closing).
+    const fadeGain = ctx.gains[1]!;
+    expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 0, time: 0.12 + DEFAULT_FADE_SECONDS });
+    expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.12 + DEFAULT_FADE_SECONDS, 6);
+  });
+
+  it("load() and the facade's src setter inherit the same fade, since both funnel through setQueue()", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+
+    ctx.currentTime = 0.08;
+    engine.load("/d.flac");
+
+    expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.08 + DEFAULT_FADE_SECONDS, 6);
+  });
+
+  it("does not fade a queue replacement while already paused or idle: there is nothing audible to fade", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    // Never played: nothing is running, so replacing the queue is a plain stop, no ramp.
+    engine.setQueue([{ src: "/e.flac" }]);
+
+    const fadeGain = ctx.gains[1]!;
+    expect(fadeGain.gain.ramps.length).toBe(0);
+  });
 });
