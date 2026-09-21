@@ -258,6 +258,13 @@ export class EkoWebEngine {
   }
 
   // ── Queue / load ────────────────────────────────────────────────────────────
+  /**
+   * Replace the queue outright and load its first track.
+   *
+   * An empty `tracks` array clears the engine: whatever was loaded is disposed and
+   * released, and the engine goes idle, rather than leaving a stopped track behind a
+   * queue that now says there is nothing to play.
+   */
   setQueue(tracks: EkoTrack[]): void {
     this.assertNotDestroyed();
     // Invalidate any in-flight load (a gap-advance, a skip) before it can assign state
@@ -282,6 +289,16 @@ export class EkoWebEngine {
     // A new queue starts with no intent of its own; any play()/pause() during its own
     // initial load is what sets one, same as the other two windows.
     this.pendingIntent = null;
+    if (this.tracks.currentIndex < 0) {
+      // An empty queue has nothing left to play. Dispose whatever was loaded and go idle
+      // now, rather than leave index/queueLength reporting "empty" beside a track,
+      // duration and sourceKind left over from the queue this call just discarded, with
+      // state still reading "playing" or "paused" for a track that no longer exists.
+      this.current?.dispose();
+      this.current = null;
+      this.setState("idle");
+      return;
+    }
     this.publish();
     if (this.tracks.currentIndex >= 0) void this.startLoad(0, token);
   }

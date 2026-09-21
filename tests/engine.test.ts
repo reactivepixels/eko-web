@@ -542,3 +542,26 @@ describe("EkoWebEngine shuffle and repeat options", () => {
     expect(engine.repeat).toBe("all");
   });
 });
+
+describe("EkoWebEngine: setQueue([]) clears the engine (I3)", () => {
+  it("goes idle, with no leftover track, duration or sourceKind, when the queue is emptied while playing", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue([{ id: "a", src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+    expect(engine.state).toBe("playing");
+
+    engine.setQueue([]);
+
+    const snapshot = engine.getSnapshot();
+    expect(snapshot.state).toBe("idle");
+    expect(snapshot.index).toBe(-1);
+    expect(snapshot.queueLength).toBe(0);
+    expect(snapshot.track).toBeNull();
+    expect(snapshot.duration).toBe(0);
+    expect(snapshot.sourceKind).toBeNull();
+    expect(snapshot.paused).toBe(true);
+  });
+});
