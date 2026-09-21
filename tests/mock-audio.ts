@@ -157,13 +157,22 @@ export function makeToneBuffer(
   return new MockAudioBuffer(1, [ch], sampleRate);
 }
 
-/** Install a fetch stub that returns OK (or a given status). Returns a restore fn. */
-export function stubFetch(ok = true, status = 200): () => void {
+/**
+ * Install a fetch stub. Returns a restore fn.
+ * `contentLength` is reported on the `content-length` header when given.
+ */
+export function stubFetch(ok = true, status = 200, contentLength?: number): () => void {
   const original = globalThis.fetch;
   globalThis.fetch = (async () =>
     ({
       ok,
       status,
+      headers: {
+        get: (name: string): string | null =>
+          name.toLowerCase() === "content-length" && contentLength !== undefined
+            ? String(contentLength)
+            : null,
+      },
       arrayBuffer: async () => new ArrayBuffer(8),
     }) as unknown as Response) as typeof fetch;
   return () => {

@@ -12,6 +12,12 @@ export interface EkoTrack {
    * buffer instead.
    */
   gainDb?: number;
+  /**
+   * Force a playback strategy for this track, overriding the engine's `source` option.
+   * Use `"element"` for something long (a DJ set, a podcast) that must not be decoded
+   * whole, at the cost of gapless on its boundaries.
+   */
+  source?: "buffer" | "element";
 }
 
 /** High-level engine state. */
@@ -34,6 +40,20 @@ export interface EkoWebEngineOptions {
    * for an audible fade; do not set it to 0 unless you want clicks.
    */
   fadeSeconds?: number;
+  /**
+   * How tracks reach the graph. `"buffer"` decodes whole files, which is the only path
+   * that can be gapless. `"element"` streams, which keeps memory flat at any length but
+   * is never sample-accurate and cannot measure loudness. `"auto"` (the default) picks
+   * per track using `bufferMaxBytes`.
+   */
+  source?: "auto" | "buffer" | "element";
+  /**
+   * The `Content-Length` above which `source: "auto"` streams instead of decoding.
+   * Default: 50 MB. This is a heuristic, because compressed size predicts decoded size
+   * badly for lossy formats, and it fails safe: guessing high costs sample-accuracy, not
+   * the tab.
+   */
+  bufferMaxBytes?: number;
 }
 
 /**

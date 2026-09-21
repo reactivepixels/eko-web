@@ -3,8 +3,8 @@ import { EkoError, type EkoErrorCode } from "./errors";
 import { EkoGraph } from "./graph";
 import { trackEndTime } from "./scheduling";
 import { rampTo, DEFAULT_FADE_SECONDS } from "./fades";
-import { BufferSourceStrategy } from "./sources/buffer-source";
-import type { AudioSourceStrategy, LoadedSource } from "./sources/source";
+import { selectStrategy } from "./sources/select";
+import type { LoadedSource } from "./sources/source";
 import type {
   EkoTrack,
   EkoState,
@@ -25,6 +25,8 @@ const DEFAULTS = {
   targetLufs: -16,
   gapless: true,
   fadeSeconds: DEFAULT_FADE_SECONDS,
+  source: "auto" as const,
+  bufferMaxBytes: 50 * 1024 * 1024,
 };
 
 /**
@@ -40,6 +42,8 @@ export class EkoWebEngine {
   private readonly targetLufs: number;
   private readonly gapless: boolean;
   private readonly fadeSeconds: number;
+  private readonly sourcePreference: "auto" | "buffer" | "element";
+  private readonly bufferMaxBytes: number;
   private readonly injectedContext?: AudioContext;
 
   private ctx: AudioContext | null = null;
@@ -47,7 +51,6 @@ export class EkoWebEngine {
 
   private queue: EkoTrack[] = [];
   private index = -1;
-  private strategy: AudioSourceStrategy = new BufferSourceStrategy();
   private current: LoadedSource | null = null;
   private armed: ArmedTrack | null = null;
 
@@ -68,6 +71,8 @@ export class EkoWebEngine {
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
     this.gapless = options.gapless ?? DEFAULTS.gapless;
     this.fadeSeconds = options.fadeSeconds ?? DEFAULTS.fadeSeconds;
+    this.sourcePreference = options.source ?? DEFAULTS.source;
+    this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
     this.injectedContext = options.context;
   }
 
@@ -150,9 +155,13 @@ export class EkoWebEngine {
     }
   }
 
-  private loadTrack(track: EkoTrack): Promise<LoadedSource> {
+  private async loadTrack(track: EkoTrack): Promise<LoadedSource> {
     const ctx = this.ensureGraph();
-    return this.strategy.load(track, ctx, {
+    const strategy = await selectStrategy(track, {
+      source: this.sourcePreference,
+      bufferMaxBytes: this.bufferMaxBytes,
+    });
+    return strategy.load(track, ctx, {
       normalize: this.normalize,
       targetLufs: this.targetLufs,
     });

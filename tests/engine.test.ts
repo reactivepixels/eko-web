@@ -193,14 +193,17 @@ describe("EkoWebEngine error codes", () => {
     ctx.nextBuffer = makeToneBuffer(0.5);
     const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
 
-    // First fetch succeeds (track A), every later fetch fails (arming track B).
+    // Track A's load takes two fetches (the auto-select HEAD probe, then the real GET),
+    // and both succeed. Every fetch after that fails, which fails both the HEAD probe and
+    // the GET while arming track B.
     let calls = 0;
     const original = globalThis.fetch;
     globalThis.fetch = (async () => {
       calls += 1;
       return {
-        ok: calls === 1,
-        status: calls === 1 ? 200 : 500,
+        ok: calls <= 2,
+        status: calls <= 2 ? 200 : 500,
+        headers: { get: (): string | null => null },
         arrayBuffer: async () => new ArrayBuffer(8),
       } as unknown as Response;
     }) as typeof fetch;
