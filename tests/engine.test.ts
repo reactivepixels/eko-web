@@ -236,6 +236,102 @@ describe("EkoWebEngine error codes", () => {
     expect(engine.getSnapshot().track?.id).toBe("b");
   });
 
+  it("a failed forward skip restores the history entry it consumed, so previous() reaches the prior track directly", async () => {
+    restoreFetch = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    // Decode 1: initial load of a. Decode 2: next() to b, succeeds. Decode 3: a second
+    // next() to c, fails. Decode 4: previous() back to b, succeeds.
+    let decodeCount = 0;
+    const boom = new Error("bad bytes");
+    ctx.decodeAudioData = async () => {
+      decodeCount++;
+      if (decodeCount === 3) throw boom;
+      if (!ctx.nextBuffer) throw new Error("mock: no nextBuffer set");
+      return ctx.nextBuffer;
+    };
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const readyA = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+      { id: "c", src: "/c.flac" },
+    ]);
+    await readyA;
+
+    const readyB = whenReady(engine);
+    engine.next();
+    await readyB;
+    expect(engine.currentIndex).toBe(1);
+
+    const errored = new Promise<EkoError>((res) => {
+      engine.on("error", ({ error }) => res(error));
+    });
+    engine.next();
+    const error = await errored;
+    // Same reasoning as the rollback test above: let skipTo's own continuation resume
+    // before asserting on what it left behind.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(error.cause).toBe(boom);
+    expect(engine.currentIndex).toBe(1);
+
+    // One previous() press must reach track a. If the failed skip left a stray history
+    // entry behind, this press lands back on b instead (where it already is).
+    const readyBack = whenReady(engine);
+    engine.previous();
+    await readyBack;
+    expect(engine.currentIndex).toBe(0);
+    expect(engine.getSnapshot().track?.id).toBe("a");
+  });
+
+  it("a failed backward skip restores the history entry it popped, so a second previous() does not skip a track", async () => {
+    restoreFetch = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    // Decode 1: initial load of a. Decodes 2-3: next() to b, next() to c, both succeed.
+    // Decode 4: previous() back to b, fails. Decode 5: previous() again, succeeds.
+    let decodeCount = 0;
+    const boom = new Error("bad bytes");
+    ctx.decodeAudioData = async () => {
+      decodeCount++;
+      if (decodeCount === 4) throw boom;
+      if (!ctx.nextBuffer) throw new Error("mock: no nextBuffer set");
+      return ctx.nextBuffer;
+    };
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const readyA = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+      { id: "c", src: "/c.flac" },
+    ]);
+    await readyA;
+
+    const readyB = whenReady(engine);
+    engine.next();
+    await readyB;
+    const readyC = whenReady(engine);
+    engine.next();
+    await readyC;
+    expect(engine.currentIndex).toBe(2);
+
+    const errored = new Promise<EkoError>((res) => {
+      engine.on("error", ({ error }) => res(error));
+    });
+    engine.previous();
+    const error = await errored;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(error.cause).toBe(boom);
+    expect(engine.currentIndex).toBe(2);
+
+    // A second previous() must land on b, not skip past it to a.
+    const readyBack = whenReady(engine);
+    engine.previous();
+    await readyBack;
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.getSnapshot().track?.id).toBe("b");
+  });
+
   it("emits autoplay_blocked when resume rejects, without rejecting play()", async () => {
     restoreFetch = stubFetch();
     const { ctx, engine } = makeEngine();

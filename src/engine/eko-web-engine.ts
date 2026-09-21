@@ -489,16 +489,18 @@ export class EkoWebEngine {
     const target = this.tracks.peekNextIndex(true);
     if (target < 0) return;
     const from = this.tracks.currentIndex;
+    const historyDepth = this.tracks.historyLength;
     this.tracks.advance(true);
-    void this.skipTo(target, from);
+    void this.skipTo(target, from, historyDepth);
   }
 
   /** Step back through what was actually played, which under shuffle is not index minus one. */
   previous(): void {
     this.assertNotDestroyed();
     const from = this.tracks.currentIndex;
+    const historyDepth = this.tracks.historyLength;
     const target = this.tracks.stepBack();
-    if (target >= 0) void this.skipTo(target, from);
+    if (target >= 0) void this.skipTo(target, from, historyDepth);
   }
 
   /** Changing this reshuffles the remaining tracks; it does not disturb what is playing. */
@@ -528,14 +530,17 @@ export class EkoWebEngine {
   }
 
   /**
-   * `rollbackTo` is where the queue sat before the caller moved it to `index`. next()/
-   * previous() move the queue eagerly, before this load even starts, so a rapid second
-   * press can compute its own target from the right place. If this specific load then
-   * fails, that eager move is now wrong: the listener is still on the old track, so the
-   * queue is put back, or getSnapshot() would report the failed index against the track
-   * that is actually still loaded.
+   * `rollbackTo` is where the queue sat before the caller moved it to `index`, and
+   * `historyDepth` is `tracks.historyLength` at that same moment. next()/previous() move
+   * the queue eagerly, before this load even starts, so a rapid second press can compute
+   * its own target from the right place. If this specific load then fails, that eager move
+   * is now wrong: the listener is still on the old track, so the queue's index AND history
+   * are put back, or getSnapshot() would report the failed index against the track that is
+   * actually still loaded, and a following previous()/next() would be one entry off (it
+   * would either replay `rollbackTo` a second time, or skip past whatever `index` would
+   * have retired from history).
    */
-  private async skipTo(index: number, rollbackTo: number): Promise<void> {
+  private async skipTo(index: number, rollbackTo: number, historyDepth: number): Promise<void> {
     // Invalidate any in-flight load (a gap-advance, another skip) before it can assign
     // state this skip now owns.
     this.advanceToken++;
@@ -575,9 +580,10 @@ export class EkoWebEngine {
       // Nothing superseded this skip (the token still matches), so it still owns the
       // engine's state, but the load itself failed: `this.current` was never reassigned
       // (loadIndex's catch path leaves it alone), so the listener is still on the old
-      // track. Put the queue back where it was, or getSnapshot() would report the failed
-      // `index` against a `track` that never changed.
-      this.tracks.jumpTo(rollbackTo);
+      // track. Put the queue back where it was, index and history both, or getSnapshot()
+      // would report the failed `index` against a `track` that never changed, and the next
+      // previous()/next() press would be one entry off.
+      this.tracks.restoreTo(rollbackTo, historyDepth, index);
     }
     this._lastTransition = "gap";
     this.publish();

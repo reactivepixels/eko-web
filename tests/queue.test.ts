@@ -312,3 +312,31 @@ describe("EkoQueue setTracks", () => {
     expect(q.previous()).toBeNull();
   });
 });
+
+describe("EkoQueue restoreTo", () => {
+  it("undoes a failed forward move (advance) without losing the history entry it pushed", () => {
+    const q = make(4);
+    q.advance(); // 0 -> 1, history [0]
+    const historyDepth = q.historyLength;
+    q.advance(); // 1 -> 2 (the move that will be "undone"), history [0, 1]
+    q.restoreTo(1, historyDepth, 2);
+    expect(q.currentIndex).toBe(1);
+    // The push made by the undone advance() must be gone, or a following previous() lands
+    // back on 1 (where it already is) instead of 0.
+    expect(q.previous()?.id).toBe("0");
+  });
+
+  it("undoes a failed backward move (stepBack) by restoring the entry it popped", () => {
+    const q = make(4);
+    q.advance(); // 0 -> 1, history [0]
+    q.advance(); // 1 -> 2, history [0, 1]
+    const historyDepth = q.historyLength;
+    const target = q.stepBack(); // pops 1, history [0], index 1
+    expect(target).toBe(1);
+    q.restoreTo(2, historyDepth, target);
+    expect(q.currentIndex).toBe(2);
+    // The pop must be undone, or the next stepBack() skips past 1 straight to 0.
+    expect(q.stepBack()).toBe(1);
+    expect(q.stepBack()).toBe(0);
+  });
+});

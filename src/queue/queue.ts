@@ -181,6 +181,38 @@ export class EkoQueue {
     return this.current;
   }
 
+  /**
+   * Undo a move that already changed both the index and history, such as `skipTo()`'s
+   * rollback after a failed load: `next()`/`previous()` move the queue eagerly, before the
+   * load starts, so a failure has to put both back.
+   *
+   * `historyDepth` is `history.length` captured before the move. A move that pushed
+   * (`advance()`, behind a manual `next()`) grew history past that depth, so undoing it
+   * means truncating back down; no value is needed, the entry is simply dropped. A move
+   * that popped (`stepBack()`, behind `previous()`) shrank it below that depth, so undoing
+   * it means pushing `poppedValue` back on. The caller always already has that value: it
+   * is exactly the target `stepBack()` moved to, since `stepBack()` sets the index to
+   * whatever it pops.
+   */
+  restoreTo(index: number, historyDepth: number, poppedValue: number): void {
+    if (index < 0 || index >= this.tracks.length) return;
+    if (this.history.length > historyDepth) {
+      this.history.length = historyDepth;
+    } else if (this.history.length < historyDepth) {
+      this.history.push(poppedValue);
+    }
+    this.index = index;
+    // The index being restored to is current again, so it must not also be sitting in the
+    // bag waiting to be drawn (the move being undone may have put it there, directly or by
+    // way of a refill).
+    this.removeFromBag(index);
+  }
+
+  /** How many entries `previous()`/`stepBack()` have to walk back through. */
+  get historyLength(): number {
+    return this.history.length;
+  }
+
   /** Every index except `exclude`, shuffled when shuffle is on, in order when it is off. */
   private refillBag(exclude = this.index): void {
     const pool: number[] = [];
