@@ -34,6 +34,16 @@
       "types": "./dist/element.d.ts",
       "import": "./dist/element.js",
       "require": "./dist/element.cjs"
+    },
+    "./replaygain": {
+      "types": "./dist/replaygain.d.ts",
+      "import": "./dist/replaygain.js",
+      "require": "./dist/replaygain.cjs"
+    },
+    "./media-session": {
+      "types": "./dist/media-session.d.ts",
+      "import": "./dist/media-session.js",
+      "require": "./dist/media-session.cjs"
     }
   },
   "files": [
