@@ -305,6 +305,9 @@ export class EkoWebEngine {
   /** Decode the next queued track and schedule it to start the instant this one ends. */
   private async armNext(): Promise<void> {
     if (!this.gapless || this._paused || !this.current || !this.ctx) return;
+    // A streaming source cannot be scheduled to a sample, so this boundary cannot be
+    // gapless no matter what the next track is.
+    if (!this.current.canGapless) return;
     const nextIndex = this.index + 1;
     if (nextIndex >= this.queue.length || this.armed) return;
     const track = this.queue[nextIndex];
@@ -328,6 +331,11 @@ export class EkoWebEngine {
       return;
     }
     if (this._paused || !this.ctx || this.index !== nextIndex - 1 || this.armed) {
+      next.dispose();
+      return;
+    }
+    if (!next.canGapless) {
+      // The incoming track streams, so it cannot start on a sample. Fall back to a gap.
       next.dispose();
       return;
     }

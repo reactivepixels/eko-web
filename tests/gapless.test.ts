@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
 import { trackEndTime } from "../src/engine/scheduling";
-import { MockAudioContext, makeToneBuffer, stubFetch } from "./mock-audio";
+import { MockAudioContext, MockMediaElement, makeToneBuffer, stubFetch } from "./mock-audio";
 
 /** Flush pending microtasks (lets the async armNext decode + schedule complete). */
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -136,5 +136,80 @@ describe("gapless", () => {
     expect(ctx.sources.length).toBe(3);
     ctx.sources[1]!.fireEnded(); // B ends → promote C
     expect(engine.currentIndex).toBe(2);
+  });
+
+  it("never arms a next track when the current source cannot be sample-accurate", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const tracks = [
+      { id: "0", src: "/t0.flac", source: "element" as const },
+      { id: "1", src: "/t1.flac", source: "element" as const },
+    ];
+
+    const originalAudio = (globalThis as { Audio?: unknown }).Audio;
+    (globalThis as { Audio?: unknown }).Audio = function (): MockMediaElement {
+      const element = new MockMediaElement();
+      setTimeout(() => element.fireLoadedMetadata(120), 0);
+      return element;
+    } as unknown as typeof Audio;
+    // The element strategy warns once per instance when it cannot measure loudness;
+    // that is unrelated to this test, so keep it out of the test output.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const ready = whenReady(engine);
+      engine.setQueue(tracks);
+      await ready;
+      await engine.play();
+      await flush(); // would-be arm attempt for track B
+
+      // A streaming source can never be scheduled to a sample, so armNext must bail
+      // before loading (let alone starting) the next track.
+      expect(ctx.sources.length).toBe(0); // no buffer source ever created
+      expect(ctx.mediaSources.length).toBe(1); // only the current track, never track B
+    } finally {
+      (globalThis as { Audio?: unknown }).Audio = originalAudio;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("loads but discards an incoming track that cannot be sample-accurate, even when the current one can", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const tracks = [
+      { id: "0", src: "/t0.flac" }, // default: buffer, gapless-capable
+      { id: "1", src: "/t1.flac", source: "element" as const }, // forced to element
+    ];
+
+    const originalAudio = (globalThis as { Audio?: unknown }).Audio;
+    (globalThis as { Audio?: unknown }).Audio = function (): MockMediaElement {
+      const element = new MockMediaElement();
+      setTimeout(() => element.fireLoadedMetadata(120), 0);
+      return element;
+    } as unknown as typeof Audio;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const ready = whenReady(engine);
+      engine.setQueue(tracks);
+      await ready;
+      await engine.play();
+      await flush(); // would-be arm attempt for track B
+
+      expect(ctx.sources.length).toBe(1); // only track A's buffer source, never armed a second
+      expect(ctx.mediaSources.length).toBe(1); // track B was loaded, then discarded unarmed
+
+      // With nothing armed, track A's natural end falls back to a gap instead of an
+      // early start on an unscheduled element source.
+      ctx.sources[0]!.fireEnded();
+      expect(engine.state).toBe("ended");
+      expect(engine.currentIndex).toBe(0);
+    } finally {
+      (globalThis as { Audio?: unknown }).Audio = originalAudio;
+      warnSpy.mockRestore();
+    }
   });
 });
