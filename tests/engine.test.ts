@@ -227,6 +227,67 @@ describe("EkoWebEngine error codes", () => {
   });
 });
 
+describe("EkoWebEngine — destroy()", () => {
+  it("throws a coded destroyed error from every mutating method afterward, and never rebuilds the graph", async () => {
+    restoreFetch = stubFetch();
+    const { ctx, engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+    const gainsBefore = ctx.gains.length;
+
+    engine.destroy();
+
+    expect(() => engine.setQueue([{ src: "/b.flac" }])).toThrow(
+      expect.objectContaining({ code: "destroyed" }),
+    );
+    expect(() => engine.pause()).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.seek(0.1)).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.next()).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.previous()).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.setVolume(0.5)).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.setMuted(true)).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.setInserts([])).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.context).toThrow(expect.objectContaining({ code: "destroyed" }));
+    expect(() => engine.analyser).toThrow(expect.objectContaining({ code: "destroyed" }));
+    await expect(engine.play()).rejects.toMatchObject({ code: "destroyed" });
+
+    // None of the above resurrected the graph: no fresh rgGain/fadeGain/userGain triple.
+    expect(ctx.gains.length).toBe(gainsBefore);
+  });
+
+  it("is idempotent: a second destroy() does not throw", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    engine.destroy();
+    expect(() => engine.destroy()).not.toThrow();
+  });
+
+  it("publishes one final, accurate snapshot and stops notifying subscribers afterward", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+    expect(engine.getSnapshot().state).toBe("playing");
+
+    let notifications = 0;
+    engine.subscribe(() => {
+      notifications += 1;
+    });
+    engine.destroy();
+
+    const finalSnapshot = engine.getSnapshot();
+    expect(finalSnapshot.state).toBe("idle");
+    expect(finalSnapshot.paused).toBe(true);
+    expect(finalSnapshot.track).toBeNull();
+    expect(finalSnapshot.index).toBe(-1);
+    expect(notifications).toBe(1); // the final publish reached the subscriber exactly once
+  });
+});
+
 describe("EkoWebEngine config", () => {
   it("reports the resolved transition, not the raw gapless option, when they would disagree", () => {
     // The older `gapless: false` option and the newer `transition` option must resolve to

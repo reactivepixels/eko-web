@@ -113,6 +113,7 @@ class ElementLoadedSource implements LoadedSource {
 
   private endedFn: (() => void) | null = null;
   private readonly onElementEnded = (): void => this.endedFn?.();
+  private disposed = false;
 
   constructor(
     readonly track: EkoTrack,
@@ -137,6 +138,12 @@ class ElementLoadedSource implements LoadedSource {
    * more than once, since pause, play and seek all restart the same track.
    */
   start(_when: number, offset: number): void {
+    if (this.disposed) {
+      // Without this, a stale start() after dispose() would set currentTime and call
+      // play() on an element whose src was already cleared, with nothing to explain why
+      // playback silently never happens.
+      throw new EkoError("destroyed", "eko-web: cannot start a source that has been disposed.");
+    }
     this.element.currentTime = offset;
     void this.element.play();
   }
@@ -150,6 +157,7 @@ class ElementLoadedSource implements LoadedSource {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.element.removeEventListener("ended", this.onElementEnded);
     this.element.pause();
     this.element.src = "";

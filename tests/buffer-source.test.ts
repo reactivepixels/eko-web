@@ -121,6 +121,26 @@ describe("BufferSourceStrategy", () => {
     expect(ended).toBe(1); // a stop is not an end
   });
 
+  it("throws a coded destroyed error on start() after dispose(), instead of playing silently", async () => {
+    restore = stubFetch();
+    const ctx = ctxWith();
+    const loaded = await new BufferSourceStrategy().load(
+      { src: "/a.flac" },
+      ctx as unknown as AudioContext,
+      OPTS,
+    );
+    const destination = new MockGainNode();
+    loaded.connect(destination as unknown as AudioNode);
+    loaded.start(0, 0);
+    const sourcesBefore = ctx.sources.length;
+
+    loaded.dispose();
+
+    expect(() => loaded.start(0, 0)).toThrow(expect.objectContaining({ code: "destroyed" }));
+    // No fresh, disconnected node was built either.
+    expect(ctx.sources.length).toBe(sourcesBefore);
+  });
+
   it("uses a track's precomputed gainDb when normalizing", async () => {
     restore = stubFetch();
     const ctx = ctxWith(makeToneBuffer(0.1));

@@ -64,6 +64,9 @@ export class EkoWebEngine {
   private _volume = 1;
   private _muted = false;
   private _paused = true;
+  /** True once destroy() has run. Guards every method that could otherwise resurrect an
+   * AudioContext or touch a graph/source that no longer exists. */
+  private destroyed = false;
 
   private subscribers = new Set<() => void>();
   private snapshot: EkoSnapshot = EMPTY_SNAPSHOT;
@@ -196,6 +199,7 @@ export class EkoWebEngine {
 
   // ── Queue / load ────────────────────────────────────────────────────────────
   setQueue(tracks: EkoTrack[]): void {
+    this.assertNotDestroyed();
     // Invalidate any in-flight load (a gap-advance, a skip) before it can assign state
     // this new queue owns now.
     this.advanceToken++;
@@ -301,6 +305,7 @@ export class EkoWebEngine {
 
   // ── Transport ───────────────────────────────────────────────────────────────
   async play(): Promise<void> {
+    this.assertNotDestroyed();
     if (this.loading) {
       // A load is mid-flight (the initial load, a skip, or a gap-advance): `current` may
       // not exist yet, or may still point at a just-ended, disposable source, so starting
@@ -341,6 +346,7 @@ export class EkoWebEngine {
   }
 
   pause(): void {
+    this.assertNotDestroyed();
     if (this.loading) {
       // Same load-in-flight window play() guards above. Record the intent instead of
       // touching a source that may not exist yet, or that the load is about to replace.
@@ -359,6 +365,7 @@ export class EkoWebEngine {
   }
 
   seek(time: number): void {
+    this.assertNotDestroyed();
     if (!this.current) return;
     const t = Math.max(0, Math.min(time, this.current.duration));
     if (this._paused) {
@@ -376,11 +383,13 @@ export class EkoWebEngine {
 
   /** Skip to the next track (manual — a small decode gap is acceptable here). */
   next(): void {
+    this.assertNotDestroyed();
     if (this.index + 1 < this.queue.length) void this.skipTo(this.index + 1);
   }
 
   /** Skip to the previous track. */
   previous(): void {
+    this.assertNotDestroyed();
     if (this.index > 0) void this.skipTo(this.index - 1);
   }
 
@@ -424,6 +433,7 @@ export class EkoWebEngine {
   }
 
   setVolume(v: number): void {
+    this.assertNotDestroyed();
     this._volume = Math.max(0, Math.min(1, v));
     if (this.graph && !this._muted) this.graph.userGain.gain.value = this._volume;
     this.emitter.emit("volumechange", { volume: this._volume, muted: this._muted });
@@ -431,6 +441,7 @@ export class EkoWebEngine {
   }
 
   setMuted(muted: boolean): void {
+    this.assertNotDestroyed();
     this._muted = muted;
     if (this.graph) this.graph.userGain.gain.value = muted ? 0 : this._volume;
     this.emitter.emit("volumechange", { volume: this._volume, muted: this._muted });
@@ -439,6 +450,7 @@ export class EkoWebEngine {
 
   /** The engine's AudioContext, so consumers can build nodes to insert. */
   get context(): AudioContext {
+    this.assertNotDestroyed();
     return this.ensureGraph();
   }
 
@@ -447,6 +459,7 @@ export class EkoWebEngine {
    * access. The library exposes the data, never a canvas.
    */
   get analyser(): AnalyserNode {
+    this.assertNotDestroyed();
     this.ensureGraph();
     return this.graph!.analyser;
   }
@@ -456,21 +469,54 @@ export class EkoWebEngine {
    * Pass an empty array to remove them. Inserts survive track changes.
    */
   setInserts(nodes: AudioNode[]): void {
+    this.assertNotDestroyed();
     this.ensureGraph();
     this.graph!.setInserts(nodes);
   }
 
+  /**
+   * Tear the engine down: stop everything, release the AudioContext, and detach every
+   * listener. Safe to call more than once. Every other method throws a coded `EkoError`
+   * ("destroyed") after this, rather than silently resurrecting a fresh AudioContext or
+   * operating on a graph that no longer exists — browsers cap how many contexts a page can
+   * create, and a stray callback (a React double-mount, an in-flight promise) reaching a
+   * "destroyed" engine is exactly the case that cap gets hit by surprise.
+   */
   destroy(): void {
+    if (this.destroyed) return; // idempotent: a second destroy() is not misuse
     // Invalidate any in-flight load so it cannot resurrect a context or state after this.
     this.advanceToken++;
     this.teardown();
     this.current?.dispose();
     this.current = null;
+    this.queue = [];
+    this.index = -1;
+    this._state = "idle";
+    this._paused = true;
+    this._lastTransition = null;
+    this.loading = false;
+    this.pendingIntent = null;
+    this.destroyed = true;
+    // One last, accurate snapshot before the subscription channel closes, so a consumer
+    // reading through `subscribe`/`getSnapshot` (a framework binding's render, mid-unmount)
+    // sees "idle, nothing loaded" rather than whatever was true the instant before destroy().
+    this.publish();
+    this.subscribers.clear();
     this.emitter.clear();
     this.graph?.destroy();
     this.graph = null;
     if (this.ctx && !this.injectedContext) void this.ctx.close();
     this.ctx = null;
+  }
+
+  /** Throws a coded EkoError if destroy() has already run. See destroy()'s own doc comment. */
+  private assertNotDestroyed(): void {
+    if (this.destroyed) {
+      throw new EkoError(
+        "destroyed",
+        "eko-web: this engine has been destroyed (destroy() was already called) and can no longer be used.",
+      );
+    }
   }
 
   // ── Gapless internals ─────────────────────────────────────────────────────────

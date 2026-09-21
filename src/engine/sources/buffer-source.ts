@@ -70,6 +70,7 @@ class BufferLoadedSource implements LoadedSource {
   private node: AudioBufferSourceNode | null = null;
   private destination: AudioNode | null = null;
   private endedFn: (() => void) | null = null;
+  private disposed = false;
 
   constructor(
     readonly track: EkoTrack,
@@ -87,6 +88,12 @@ class BufferLoadedSource implements LoadedSource {
   }
 
   start(when: number, offset: number): void {
+    if (this.disposed) {
+      // Without this, a stale start() after dispose() would build a fresh node, silently
+      // skip connect() (dispose() already nulled `destination`), and play into nothing
+      // forever with no error to explain the silence.
+      throw new EkoError("destroyed", "eko-web: cannot start a source that has been disposed.");
+    }
     // AudioBufferSourceNode is single-use, so every start gets a fresh node.
     const node = this.ctx.createBufferSource();
     node.buffer = this.buffer;
@@ -117,6 +124,7 @@ class BufferLoadedSource implements LoadedSource {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.stop();
     this.endedFn = null;
     this.destination = null;

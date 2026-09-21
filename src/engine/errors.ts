@@ -14,7 +14,9 @@ export type EkoErrorCode =
   /** `AudioContext.resume()` rejected, almost always because there was no user gesture. */
   | "autoplay_blocked"
   /** The next track could not be armed. Playback continues and the boundary degrades. */
-  | "prefetch_failed";
+  | "prefetch_failed"
+  /** The engine (or a source it owns) was used after `destroy()`/`dispose()`. */
+  | "destroyed";
 
 export interface EkoErrorOptions {
   /** The original thrown value, kept for debugging. */

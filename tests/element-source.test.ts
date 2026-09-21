@@ -163,4 +163,17 @@ describe("ElementSourceStrategy", () => {
       vi.useRealTimers();
     }
   });
+
+  it("throws a coded destroyed error on start() after dispose(), instead of playing silently", async () => {
+    const { ctx, element, strategy } = setup();
+    const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
+    loaded.connect(new MockGainNode() as unknown as AudioNode);
+    loaded.start(0, 0);
+
+    loaded.dispose();
+
+    expect(() => loaded.start(0, 10)).toThrow(expect.objectContaining({ code: "destroyed" }));
+    // Nothing silently resumed playback on the (now `src=""`) element either.
+    expect(element.paused).toBe(true);
+  });
 });
