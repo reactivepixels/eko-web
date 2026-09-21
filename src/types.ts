@@ -1,3 +1,5 @@
+import type { EkoError } from "./engine/errors";
+
 /** A track in the engine's queue. */
 export interface EkoTrack {
   /** Stable id for the consumer (optional). */
@@ -46,7 +48,9 @@ export interface EkoEventMap {
   /** Fires AFTER a seamless gapless transition — the UI advances on this, not on `src` swap. */
   trackchange: { index: number; track: EkoTrack };
   volumechange: { volume: number; muted: boolean };
-  error: { error: Error };
+  error: {
+    error: EkoError;
+  };
 }
 
 export type EkoEventName = keyof EkoEventMap;

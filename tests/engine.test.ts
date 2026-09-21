@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
+import { EkoError } from "../src/engine/errors";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain } from "../src/engine/loudness";
 import { MockAudioContext, makeToneBuffer, stubFetch } from "./mock-audio";
 
@@ -134,5 +135,90 @@ describe("EkoWebEngine — transport", () => {
     ctx.sources[0]!.fireEnded();
     expect(ended).toHaveBeenCalledTimes(1);
     expect(engine.state).toBe("ended");
+  });
+});
+
+describe("EkoWebEngine error codes", () => {
+  it("reports a failed fetch as fetch_failed", async () => {
+    restoreFetch = stubFetch(false, 404);
+    const { engine } = makeEngine();
+    const error = await new Promise<EkoError>((res) => {
+      engine.on("error", ({ error }) => res(error));
+      engine.setQueue([{ src: "/missing.flac" }]);
+    });
+    expect(error).toBeInstanceOf(EkoError);
+    expect(error.code).toBe("fetch_failed");
+    expect(error.recoverable).toBe(false);
+    expect(engine.state).toBe("error");
+  });
+
+  it("reports a rejected decode as decode_failed and keeps the cause", async () => {
+    restoreFetch = stubFetch();
+    const ctx = new MockAudioContext();
+    const boom = new Error("bad bytes");
+    ctx.decodeAudioData = async () => {
+      throw boom;
+    };
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const error = await new Promise<EkoError>((res) => {
+      engine.on("error", ({ error }) => res(error));
+      engine.setQueue([{ src: "/a.flac" }]);
+    });
+    expect(error.code).toBe("decode_failed");
+    expect(error.cause).toBe(boom);
+  });
+
+  it("emits autoplay_blocked when resume rejects, without rejecting play()", async () => {
+    restoreFetch = stubFetch();
+    const { ctx, engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+
+    ctx.state = "suspended";
+    ctx.resume = async () => {
+      throw new Error("no user gesture");
+    };
+    const errors: EkoError[] = [];
+    engine.on("error", ({ error }) => errors.push(error));
+
+    await expect(engine.play()).resolves.toBeUndefined();
+    expect(errors.map((e) => e.code)).toContain("autoplay_blocked");
+    expect(engine.paused).toBe(true);
+  });
+
+  it("emits a recoverable prefetch_failed when the next track cannot be armed", async () => {
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+
+    // First fetch succeeds (track A), every later fetch fails (arming track B).
+    let calls = 0;
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return {
+        ok: calls === 1,
+        status: calls === 1 ? 200 : 500,
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+    }) as typeof fetch;
+    restoreFetch = () => {
+      globalThis.fetch = original;
+    };
+
+    const errors: EkoError[] = [];
+    engine.on("error", ({ error }) => errors.push(error));
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }, { src: "/b.flac" }]);
+    await ready;
+    await engine.play();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const prefetch = errors.find((e) => e.code === "prefetch_failed");
+    expect(prefetch).toBeDefined();
+    expect(prefetch!.recoverable).toBe(true);
+    // Playback of the current track is unaffected.
+    expect(engine.paused).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { Emitter } from "./event-emitter";
+import { EkoError, type EkoErrorCode } from "./errors";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain, dbToLinear } from "./loudness";
 import { trackEndTime } from "./scheduling";
 import type {
@@ -144,16 +145,35 @@ export class EkoWebEngine {
       }
     } catch (error) {
       this.setState("error");
-      this.emitter.emit("error", { error: error as Error });
+      this.emitter.emit("error", { error: asEkoError(error, "decode_failed") });
     }
   }
 
   private async decodeTrack(track: EkoTrack): Promise<DecodedTrack> {
     const ctx = this.ensureGraph();
-    const res = await fetch(track.src);
-    if (!res.ok) throw new Error(`eko-web: fetch failed for ${track.src} (${res.status})`);
-    const arr = await res.arrayBuffer();
-    const buffer = await ctx.decodeAudioData(arr);
+
+    let arr: ArrayBuffer;
+    try {
+      const res = await fetch(track.src);
+      if (!res.ok) {
+        throw new EkoError(
+          "fetch_failed",
+          `eko-web: fetch failed for ${track.src} (${res.status})`,
+        );
+      }
+      arr = await res.arrayBuffer();
+    } catch (cause) {
+      if (cause instanceof EkoError) throw cause;
+      throw new EkoError("fetch_failed", `eko-web: fetch failed for ${track.src}`, { cause });
+    }
+
+    let buffer: AudioBuffer;
+    try {
+      buffer = await ctx.decodeAudioData(arr);
+    } catch (cause) {
+      throw new EkoError("decode_failed", `eko-web: could not decode ${track.src}`, { cause });
+    }
+
     return {
       track,
       buffer,
@@ -178,7 +198,22 @@ export class EkoWebEngine {
   // ── Transport ───────────────────────────────────────────────────────────────
   async play(): Promise<void> {
     const ctx = this.ensureGraph();
-    if (ctx.state === "suspended") await ctx.resume();
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch (cause) {
+        // Do not reject: the engine calls `void this.play()` internally, and a rejection
+        // there would surface as an unhandled rejection in the consumer's app.
+        this.emitter.emit("error", {
+          error: new EkoError(
+            "autoplay_blocked",
+            "eko-web: the browser blocked playback. Call play() from a user gesture.",
+            { cause },
+          ),
+        });
+        return;
+      }
+    }
     if (!this.decoded) {
       // Play as soon as the current track finishes decoding.
       this.playRequested = true;
@@ -275,8 +310,16 @@ export class EkoWebEngine {
     let next: DecodedTrack;
     try {
       next = await this.decodeTrack(track);
-    } catch {
-      return; // can't preload → falls back to a small gap at the boundary
+    } catch (cause) {
+      // Recoverable: the current track keeps playing, the boundary degrades to a gap.
+      this.emitter.emit("error", {
+        error: new EkoError(
+          "prefetch_failed",
+          `eko-web: could not preload ${track.src}; this boundary will have a gap`,
+          { cause },
+        ),
+      });
+      return;
     }
     // Bail if playback moved on while we were decoding (pause / seek / skip / re-arm).
     if (this._paused || !this.ctx || this.index !== nextIndex - 1 || this.armed) return;
@@ -421,6 +464,15 @@ function createAudioContext(): AudioContext {
     typeof AudioContext !== "undefined"
       ? AudioContext
       : (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) throw new Error("eko-web: Web Audio API is unavailable in this environment");
+  if (!Ctor) {
+    throw new EkoError("no_web_audio", "eko-web: the Web Audio API is unavailable here");
+  }
   return new Ctor();
+}
+
+/** Wrap an unknown thrown value as an EkoError, preserving one that is already coded. */
+function asEkoError(value: unknown, fallback: EkoErrorCode): EkoError {
+  if (value instanceof EkoError) return value;
+  const message = value instanceof Error ? value.message : String(value);
+  return new EkoError(fallback, message, { cause: value });
 }

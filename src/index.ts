@@ -19,3 +19,6 @@ export {
 
 // EkoWebEngine is exported once the engine lands (Phase 2).
 export { EkoWebEngine } from "./engine/eko-web-engine";
+
+export { EkoError } from "./engine/errors";
+export type { EkoErrorCode, EkoErrorOptions } from "./engine/errors";
