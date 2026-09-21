@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoAudioElement } from "../src/adapters/eko-audio-element";
-import { MockAudioContext, makeToneBuffer, stubFetch } from "./mock-audio";
+import { MockAudioContext, MockMediaElement, makeToneBuffer, stubFetch } from "./mock-audio";
 
 function makeEl() {
   const ctx = new MockAudioContext();
@@ -89,5 +89,36 @@ describe("EkoAudioElement", () => {
     await loadVia(el);
     expect(el.buffered.length).toBe(1);
     expect(el.buffered.end(0)).toBeCloseTo(0.5, 3);
+    expect(el.readyState).toBe(4); // HAVE_ENOUGH_DATA: the buffer strategy has it all
+  });
+
+  it("reports readyState/buffered honestly for the streaming (element) path, unlike the buffer path", async () => {
+    // A large enough Content-Length, with a tiny bufferMaxBytes, forces the auto-select
+    // heuristic onto the element strategy.
+    restore = stubFetch(true, 200, 100 * 1024 * 1024);
+    const ctx = new MockAudioContext();
+    const el = new EkoAudioElement({ context: ctx as unknown as AudioContext, bufferMaxBytes: 1 });
+
+    const originalAudio = (globalThis as { Audio?: unknown }).Audio;
+    (globalThis as { Audio?: unknown }).Audio = function (): MockMediaElement {
+      const element = new MockMediaElement();
+      setTimeout(() => element.fireLoadedMetadata(3600), 0);
+      return element;
+    } as unknown as typeof Audio;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await loadVia(el, "/long.flac");
+
+      // HAVE_CURRENT_DATA (2), not HAVE_ENOUGH_DATA (4): eko-web cannot promise the rest
+      // of a streamed file is already available the way it can for a decoded buffer.
+      expect(el.readyState).toBe(2);
+      // Nothing has actually downloaded yet (per the mock element), so this must not
+      // claim [0, duration] the way the pre-fix code always did.
+      expect(el.buffered.length).toBe(0);
+    } finally {
+      (globalThis as { Audio?: unknown }).Audio = originalAudio;
+      warnSpy.mockRestore();
+    }
   });
 });

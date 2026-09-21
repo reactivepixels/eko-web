@@ -141,6 +141,18 @@ describe("BufferSourceStrategy", () => {
     expect(ctx.sources.length).toBe(sourcesBefore);
   });
 
+  it("reports bufferedEnd as the full duration, since the whole file is already decoded", async () => {
+    restore = stubFetch();
+    const ctx = ctxWith(makeToneBuffer(0.5));
+    const loaded = await new BufferSourceStrategy().load(
+      { src: "/a.flac" },
+      ctx as unknown as AudioContext,
+      OPTS,
+    );
+    expect(loaded.bufferedEnd).toBeCloseTo(loaded.duration, 6);
+    expect(loaded.bufferedEnd).toBeCloseTo(0.5, 3);
+  });
+
   it("uses a track's precomputed gainDb when normalizing", async () => {
     restore = stubFetch();
     const ctx = ctxWith(makeToneBuffer(0.1));

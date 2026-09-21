@@ -128,6 +128,17 @@ class ElementLoadedSource implements LoadedSource {
     return Number.isFinite(this.element.duration) ? this.element.duration : 0;
   }
 
+  /**
+   * The browser's own live buffered range, read straight off the element. Unlike the
+   * buffer strategy, this genuinely grows over time as more of the stream downloads, and
+   * can be less than `duration` for a long time on a slow connection.
+   */
+  get bufferedEnd(): number {
+    const ranges = this.element.buffered;
+    if (!ranges || ranges.length === 0) return 0;
+    return ranges.end(ranges.length - 1);
+  }
+
   connect(destination: AudioNode): void {
     this.node.connect(destination);
   }

@@ -498,7 +498,7 @@ describe("pending intent during a load", () => {
     engine.setQueue(tracks);
 
     // Track A's fetch/decode has not resolved yet. Ask to play, then change your mind
-    // before it does — the first interaction anyone has with this library.
+    // before it does: the first interaction anyone has with this library.
     void engine.play();
     engine.pause();
 
@@ -536,8 +536,8 @@ describe("pending intent during a load", () => {
     await flush();
     expect(ctx.sources.length).toBe(1);
 
-    // next() starts loading track B. Before that settles, the consumer changes their mind
-    // — not a gap-advance interrupting anything, the skip's own load.
+    // next() starts loading track B. Before that settles, the consumer changes their mind:
+    // not a gap-advance interrupting anything, the skip's own load.
     engine.next();
     engine.pause();
 
@@ -560,7 +560,7 @@ describe("pending intent during a load", () => {
     expect(ctx.sources.length).toBe(1);
 
     engine.next(); // starts loading track B; the skip's own load is now in flight
-    void engine.play(); // redundant — already resuming once the load settles
+    void engine.play(); // redundant, already resuming once the load settles
 
     // If play() wrongly restarted the old source immediately, a second source would exist
     // right now, well before track B's load could possibly have settled.

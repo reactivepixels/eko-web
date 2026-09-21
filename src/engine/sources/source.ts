@@ -19,6 +19,13 @@ export interface LoadedSource {
   readonly kind: SourceKind;
   readonly track: EkoTrack;
   readonly duration: number;
+  /**
+   * How far into the track playable data currently extends, in seconds. For the buffer
+   * strategy this is always `duration` (the whole file is already decoded); for the
+   * element strategy it reflects the browser's live `buffered` TimeRanges and grows as
+   * more of the file downloads. Read at any time; it is not an event.
+   */
+  readonly bufferedEnd: number;
   /** Linear normalization gain to apply (1 = none). */
   readonly normGain: number;
   /** Whether this source can be scheduled to a sample boundary. */

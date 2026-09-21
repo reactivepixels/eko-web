@@ -80,15 +80,28 @@ export class EkoAudioElement {
   set muted(m: boolean) {
     this.engine.setMuted(m);
   }
-  /** HAVE_NOTHING (0) until loaded, then HAVE_ENOUGH_DATA (4) — the buffer is fully decoded. */
+  /**
+   * HAVE_NOTHING (0) until loaded. Once loaded: HAVE_ENOUGH_DATA (4) for the buffer
+   * strategy, since the whole file really is already decoded and playback cannot stall on
+   * a slow connection from here. HAVE_CURRENT_DATA (2) for the element strategy, since
+   * eko-web cannot promise more than "playable right now" there: the browser is still
+   * streaming the rest, and a slow connection can still stall it.
+   */
   get readyState(): number {
-    const s = this.engine.state;
-    return s === "idle" || s === "loading" ? 0 : 4;
+    const snap = this.engine.getSnapshot();
+    if (snap.state === "idle" || snap.state === "loading") return 0;
+    return snap.sourceKind === "element" ? 2 : 4;
   }
-  /** A `TimeRanges`-like view: the whole track is decoded, so [0, duration]. */
+  /**
+   * A `TimeRanges`-like view. For the buffer strategy the whole track is decoded, so this
+   * is always `[0, duration]`. For the element strategy it reflects what the browser has
+   * actually downloaded so far (`engine.bufferedEnd`), which grows over time and can sit
+   * well short of `duration` on a slow connection. This is exactly what a host player's
+   * buffer bar reads, so it has to be real, not a standing claim that everything is ready.
+   */
   get buffered(): { length: number; start: (i: number) => number; end: (i: number) => number } {
-    const d = this.engine.duration;
-    return { length: d > 0 ? 1 : 0, start: () => 0, end: () => d };
+    const end = this.engine.bufferedEnd;
+    return { length: end > 0 ? 1 : 0, start: () => 0, end: () => end };
   }
 
   // ── HTMLMediaElement-compatible methods ─────────────────────────────────────

@@ -179,6 +179,15 @@ export class EkoWebEngine {
   get duration(): number {
     return this.current?.duration ?? 0;
   }
+  /**
+   * How far into the current track playable data extends, in seconds. Always `duration`
+   * for the buffer strategy; for the element strategy this is the browser's own live
+   * buffered range, and genuinely grows over time. A getter, like `currentTime`, since it
+   * changes continuously rather than on a discrete boundary.
+   */
+  get bufferedEnd(): number {
+    return this.current?.bufferedEnd ?? 0;
+  }
   get currentIndex(): number {
     return this.index;
   }
@@ -245,7 +254,7 @@ export class EkoWebEngine {
    * already owns the engine's state by the time this one would.
    *
    * Sets `loading` for its whole span; see that field's declaration for why. Never resumes
-   * playback itself — callers that have a boundary to report (skipTo(), advanceWithGap())
+   * playback itself: callers that have a boundary to report (skipTo(), advanceWithGap())
    * do that first, then call `resolvePendingIntent()` themselves, so `play` never fires
    * before the `trackchange` it belongs after.
    */
@@ -478,7 +487,7 @@ export class EkoWebEngine {
    * Tear the engine down: stop everything, release the AudioContext, and detach every
    * listener. Safe to call more than once. Every other method throws a coded `EkoError`
    * ("destroyed") after this, rather than silently resurrecting a fresh AudioContext or
-   * operating on a graph that no longer exists — browsers cap how many contexts a page can
+   * operating on a graph that no longer exists. Browsers cap how many contexts a page can
    * create, and a stray callback (a React double-mount, an in-flight promise) reaching a
    * "destroyed" engine is exactly the case that cap gets hit by surprise.
    */

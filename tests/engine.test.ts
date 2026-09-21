@@ -227,7 +227,7 @@ describe("EkoWebEngine error codes", () => {
   });
 });
 
-describe("EkoWebEngine — destroy()", () => {
+describe("EkoWebEngine destroy()", () => {
   it("throws a coded destroyed error from every mutating method afterward, and never rebuilds the graph", async () => {
     restoreFetch = stubFetch();
     const { ctx, engine } = makeEngine();

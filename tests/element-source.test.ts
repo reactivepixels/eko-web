@@ -164,6 +164,19 @@ describe("ElementSourceStrategy", () => {
     }
   });
 
+  it("reports bufferedEnd from the element's own live buffered range, honestly short of duration", async () => {
+    const { ctx, element, strategy } = setup();
+    const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" }, 3600);
+    // Nothing downloaded yet, even though metadata (and so duration) already arrived.
+    expect(loaded.bufferedEnd).toBe(0);
+
+    // The browser reports more has downloaded; bufferedEnd must reflect that live, not a
+    // standing claim that the whole 3600s track is already available.
+    element.bufferedEnd = 42;
+    expect(loaded.bufferedEnd).toBeCloseTo(42, 6);
+    expect(loaded.bufferedEnd).toBeLessThan(loaded.duration);
+  });
+
   it("throws a coded destroyed error on start() after dispose(), instead of playing silently", async () => {
     const { ctx, element, strategy } = setup();
     const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });

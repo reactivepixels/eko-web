@@ -8,7 +8,7 @@ export class MockParam {
   scheduled: Array<{ value: number; time: number }> = [];
   /** Linear ramps, in the order they were scheduled. */
   ramps: Array<{ value: number; time: number }> = [];
-  /** The value before any automation event — what `valueAt` holds before the first event. */
+  /** The value before any automation event: what `valueAt` holds before the first event. */
   private readonly initialValue: number;
 
   constructor(initialValue = 1) {
@@ -232,7 +232,15 @@ export class MockMediaElement {
   currentTime = 0;
   duration = NaN;
   paused = true;
+  /** Test-settable: how far the (fake) download has reached, in seconds. */
+  bufferedEnd = 0;
   private listeners = new Map<string, Set<() => void>>();
+
+  /** A minimal `TimeRanges`-like read of `bufferedEnd`, matching the real element's shape. */
+  get buffered(): { length: number; start: (i: number) => number; end: (i: number) => number } {
+    const end = this.bufferedEnd;
+    return { length: end > 0 ? 1 : 0, start: () => 0, end: () => end };
+  }
 
   addEventListener(type: string, fn: () => void): void {
     let set = this.listeners.get(type);

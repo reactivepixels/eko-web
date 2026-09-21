@@ -83,6 +83,11 @@ class BufferLoadedSource implements LoadedSource {
     return this.buffer.duration;
   }
 
+  /** The whole file is already decoded, so this is always the full duration. */
+  get bufferedEnd(): number {
+    return this.buffer.duration;
+  }
+
   connect(destination: AudioNode): void {
     this.destination = destination;
   }
