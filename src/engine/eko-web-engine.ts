@@ -6,6 +6,7 @@ import { rampTo, DEFAULT_FADE_SECONDS } from "./fades";
 import { selectStrategy } from "./sources/select";
 import type { LoadedSource } from "./sources/source";
 import { EMPTY_SNAPSHOT, snapshotsEqual, type EkoSnapshot } from "./snapshot";
+import { EkoQueue } from "../queue/queue";
 import type {
   EkoTrack,
   EkoState,
@@ -54,8 +55,8 @@ export class EkoWebEngine {
   private ctx: AudioContext | null = null;
   private graph: EkoGraph | null = null;
 
-  private queue: EkoTrack[] = [];
-  private index = -1;
+  /** Ordering lives here so the scheduler can ask what plays next before the boundary. */
+  private readonly tracks = new EkoQueue();
   private current: LoadedSource | null = null;
   private armed: ArmedTrack | null = null;
 
@@ -133,8 +134,8 @@ export class EkoWebEngine {
     const next: EkoSnapshot = {
       state: this._state,
       paused: this._paused,
-      index: this.index,
-      track: this.current?.track ?? this.queue[this.index] ?? null,
+      index: this.tracks.currentIndex,
+      track: this.current?.track ?? this.tracks.current ?? null,
       duration: this.current?.duration ?? 0,
       volume: this._volume,
       muted: this._muted,
@@ -191,7 +192,7 @@ export class EkoWebEngine {
     return this.current?.bufferedEnd ?? 0;
   }
   get currentIndex(): number {
-    return this.index;
+    return this.tracks.currentIndex;
   }
   /** What happened at the most recent boundary, or null before the first one. */
   get lastTransition(): TransitionKind | null {
@@ -227,14 +228,13 @@ export class EkoWebEngine {
     }
     this.clearArmed();
     this.stopRaf();
-    this.queue = tracks.slice();
-    this.index = tracks.length > 0 ? 0 : -1;
+    this.tracks.setTracks(tracks);
     this._paused = true;
     // A new queue starts with no intent of its own; any play()/pause() during its own
     // initial load is what sets one, same as the other two windows.
     this.pendingIntent = null;
     this.publish();
-    if (this.index >= 0) void this.startLoad(0, token);
+    if (this.tracks.currentIndex >= 0) void this.startLoad(0, token);
   }
 
   load(srcOrTrack: string | EkoTrack): void {
@@ -244,7 +244,9 @@ export class EkoWebEngine {
 
   /** The initial load for a queue has no boundary of its own to report; just honour intent. */
   private async startLoad(index: number, token: number): Promise<void> {
-    await this.loadIndex(index, token);
+    const track = this.tracks.current;
+    if (!track) return;
+    await this.loadIndex(index, track, token);
     if (token !== this.advanceToken) return;
     this.resolvePendingIntent();
   }
@@ -259,10 +261,14 @@ export class EkoWebEngine {
    * playback itself: callers that have a boundary to report (skipTo(), advanceWithGap())
    * do that first, then call `resolvePendingIntent()` themselves, so `play` never fires
    * before the `trackchange` it belongs after.
+   *
+   * This never touches the queue's position; the caller passes the exact `track` to load.
+   * `skipTo()` and `startLoad()` call this once the queue already sits at `index` (they moved
+   * it first). `advanceWithGap()` is the one exception: it passes a peeked track and only
+   * commits the queue's move, via `advance()`, once this load actually succeeds, so a manual
+   * `next()`/`previous()` racing an in-flight gap-advance still sees the queue where it was.
    */
-  private async loadIndex(index: number, token: number): Promise<void> {
-    const track = this.queue[index];
-    if (!track) return;
+  private async loadIndex(index: number, track: EkoTrack, token: number): Promise<void> {
     this.loading = true;
     this.setState("loading");
     this.emitter.emit("loadstart", { index });
@@ -277,7 +283,6 @@ export class EkoWebEngine {
       loaded.onStartError((error) => this.handleStartError(error));
       this.current?.dispose();
       this.current = loaded;
-      this.index = index;
       this.startOffset = 0;
       this.loading = false;
       this.setState("ready");
@@ -396,13 +401,17 @@ export class EkoWebEngine {
   /** Skip to the next track (manual, so a small decode gap is acceptable here). */
   next(): void {
     this.assertNotDestroyed();
-    if (this.index + 1 < this.queue.length) void this.skipTo(this.index + 1);
+    const target = this.tracks.peekNextIndex();
+    if (target < 0) return;
+    this.tracks.advance();
+    void this.skipTo(target);
   }
 
-  /** Skip to the previous track. */
+  /** Step back through what was actually played, which under shuffle is not index minus one. */
   previous(): void {
     this.assertNotDestroyed();
-    if (this.index > 0) void this.skipTo(this.index - 1);
+    const target = this.tracks.stepBack();
+    if (target >= 0) void this.skipTo(target);
   }
 
   private async skipTo(index: number): Promise<void> {
@@ -431,7 +440,10 @@ export class EkoWebEngine {
     this.clearArmed();
     this._paused = true;
     this.stopRaf();
-    await this.loadIndex(index, token);
+    // next()/previous() already moved the queue to `index` before calling this, so the
+    // track to load is whatever the queue now says is current.
+    const track = this.tracks.current;
+    if (track) await this.loadIndex(index, track, token);
     if (token !== this.advanceToken) {
       // Superseded (setQueue() or a newer skip) while this one was loading; whichever call
       // superseded it owns the engine's state now.
@@ -439,7 +451,6 @@ export class EkoWebEngine {
     }
     this._lastTransition = "gap";
     this.publish();
-    const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
     this.resolvePendingIntent();
   }
@@ -501,8 +512,7 @@ export class EkoWebEngine {
     this.teardown();
     this.current?.dispose();
     this.current = null;
-    this.queue = [];
-    this.index = -1;
+    this.tracks.setTracks([]);
     this._state = "idle";
     this._paused = true;
     this._lastTransition = null;
@@ -538,9 +548,9 @@ export class EkoWebEngine {
     // A streaming source cannot be scheduled to a sample, so this boundary cannot be
     // gapless no matter what the next track is.
     if (!this.current.canGapless) return;
-    const nextIndex = this.index + 1;
-    if (nextIndex >= this.queue.length || this.armed) return;
-    const track = this.queue[nextIndex];
+    const nextIndex = this.tracks.peekNextIndex();
+    if (nextIndex < 0 || this.armed) return;
+    const track = this.tracks.peekNext();
     if (!track) return;
 
     // The boundary is fixed once the current source started (start time + offset).
@@ -560,7 +570,7 @@ export class EkoWebEngine {
       });
       return;
     }
-    if (this._paused || !this.ctx || this.index !== nextIndex - 1 || this.armed) {
+    if (this._paused || !this.ctx || this.tracks.peekNextIndex() !== nextIndex || this.armed) {
       next.dispose();
       return;
     }
@@ -585,7 +595,9 @@ export class EkoWebEngine {
       this.armed = null;
       this.current?.dispose();
       this.current = armed.loaded;
-      this.index = armed.index;
+      // The armed track was chosen by peekNextIndex(), and advance() moves to exactly that
+      // index (peek is stable, so the two cannot disagree).
+      this.tracks.advance();
       this.startCtxTime = armed.startCtxTime;
       this.startOffset = 0;
       this._lastTransition = "gapless";
@@ -597,12 +609,19 @@ export class EkoWebEngine {
         transition: "gapless",
       });
       void this.armNext();
-    } else if (this.index + 1 < this.queue.length) {
-      // Nothing was armed: the policy asked for a gap, a streaming source was involved, or
-      // the prefetch failed. Advance anyway, and be honest that there was a gap.
-      void this.advanceWithGap(this.index + 1);
     } else {
-      this.handleNaturalEnd();
+      // Nothing was armed: the policy asked for a gap, a streaming source was involved, or
+      // the prefetch failed. Advance anyway, and be honest that there was a gap. Unlike
+      // next()/previous(), this does NOT move the queue up front: the boundary is async
+      // (loadIndex has to await a load), and a manual next()/previous() must still be able
+      // to read "where the queue actually is" while that load is in flight, not where a
+      // not-yet-settled advance intends to land. See advanceWithGap().
+      const nextIndex = this.tracks.peekNextIndex();
+      if (nextIndex >= 0) {
+        void this.advanceWithGap(nextIndex);
+      } else {
+        this.handleNaturalEnd();
+      }
     }
   }
 
@@ -616,16 +635,24 @@ export class EkoWebEngine {
     // the window overwrites.
     this.pendingIntent = "play";
     const token = this.advanceToken;
-    await this.loadIndex(index, token);
+    // A pure read: the queue's position does not move until the load below actually
+    // succeeds. If a manual next()/previous() supersedes this in the meantime, it sees the
+    // queue exactly where it was, not pre-moved to where this advance was heading.
+    const track = this.tracks.peekNext();
+    if (track) await this.loadIndex(index, track, token);
     if (token !== this.advanceToken) {
       // Superseded by setQueue(), skipTo() or destroy() while this was loading. Whichever
       // call superseded it owns the engine's state now; this advance has nothing left to
       // do, not even reporting the boundary, since it never actually reached track `index`.
       return;
     }
+    // Only now, with the load confirmed to still be current, commit the move. The track
+    // just loaded was chosen by peekNextIndex() above, and advance() moves to exactly that
+    // index (peek is stable, so the two cannot disagree), the same guarantee the gapless
+    // promotion above relies on.
+    this.tracks.advance();
     this._lastTransition = "gap";
     this.publish();
-    const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
     this.resolvePendingIntent();
   }

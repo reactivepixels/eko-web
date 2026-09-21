@@ -197,6 +197,35 @@ describe("EkoQueue history", () => {
   });
 });
 
+describe("EkoQueue stepBack", () => {
+  it("walking forward three tracks under shuffle then back three times retraces exactly what was heard", () => {
+    const q = make(8);
+    q.shuffle = true;
+    const played = [q.currentIndex];
+    q.advance();
+    played.push(q.currentIndex);
+    q.advance();
+    played.push(q.currentIndex);
+    q.advance();
+    played.push(q.currentIndex);
+
+    expect(q.stepBack()).toBe(played[2]);
+    expect(q.stepBack()).toBe(played[1]);
+    expect(q.stepBack()).toBe(played[0]);
+  });
+
+  it("falls back to the index below when there is no history", () => {
+    const q = make(3);
+    q.jumpTo(2);
+    expect(q.stepBack()).toBe(1);
+  });
+
+  it("at the very start returns -1", () => {
+    const q = make(3);
+    expect(q.stepBack()).toBe(-1);
+  });
+});
+
 describe("EkoQueue setTracks", () => {
   it("resets history and the bag", () => {
     const q = make(5);

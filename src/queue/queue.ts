@@ -122,6 +122,22 @@ export class EkoQueue {
     return null;
   }
 
+  /** Step back one entry in history. Returns the index moved to, or -1 when there is none. */
+  stepBack(): number {
+    const last = this.history.pop();
+    if (last !== undefined) {
+      this.index = last;
+      this.refillBag(last);
+      return last;
+    }
+    if (this.index > 0) {
+      this.index -= 1;
+      this.refillBag(this.index);
+      return this.index;
+    }
+    return -1;
+  }
+
   /**
    * Jump straight to an index, as a manual skip or a fresh queue position does. This does
    * not extend `previous()` history: a deliberate jump is not "what was actually played"
