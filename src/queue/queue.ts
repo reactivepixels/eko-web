@@ -19,6 +19,11 @@ export type RepeatMode = "none" | "one" | "all";
  * Both fall out of keeping the bag already refilled: `advance()` refills it the moment it
  * empties under repeat "all", and the `repeat` setter tops it up too when a switch INTO
  * "all" is itself what makes the bag relevant again, so `peekNext()` is only ever a read.
+ *
+ * Public on purpose: this is a standalone ordering primitive, usable on its own with no
+ * engine attached. `EkoWebEngine` owns its own private instance and never reads this one,
+ * so constructing one yourself hands you an object no engine will ever consult; wire its
+ * decisions into your own playback if you use it standalone.
  */
 export class EkoQueue {
   private tracks: EkoTrack[] = [];
