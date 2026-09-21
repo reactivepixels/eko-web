@@ -8,10 +8,11 @@
  * off), because a broken tag can never be allowed to take down playback.
  */
 
-export interface ReplayGainTags {
-  gainDb?: number;
-  peak?: number;
-}
+import type { ReplayGainTags } from "./types";
+
+// Re-exported so existing consumers importing the type from this module keep working;
+// `types.ts` is the single declaration (see the comment there).
+export type { ReplayGainTags } from "./types";
 
 const FLAC_MAGIC = [0x66, 0x4c, 0x61, 0x43]; // "fLaC"
 const OGG_MAGIC = [0x4f, 0x67, 0x67, 0x53]; // "OggS"
