@@ -13,12 +13,20 @@ bit-perfect; **eko-web is not, and doesn't pretend to be**. See the scope below.
 
 - **True gapless**: albums, live sets, classical, DJ mixes flow with zero silence between
   tracks (sample-accurate scheduling, not a `setTimeout` hack).
+- **Crossfade, when you want it instead**: a boundary is one decision, not two features.
+  Set `transition` to `"gapless"`, `"crossfade"` or `"gap"` and the engine schedules the
+  rest. Both sides of a crossfade keep their own normalization gain while they overlap, so
+  the blend doesn't undo the loudness work.
 - **Loudness normalization**: ReplayGain/LUFS so tracks don't jump in volume across a
   playlist. The single most audible "this sounds better" win on the web. Uses a track's own
   precomputed gain tag when you have one, or measures it from the decoded audio when you
   don't.
 - **Click-free transport**: play, pause and seek all ramp instead of cutting, with no API
   of their own. It just happens.
+- **A queue that drives the prefetch**: shuffle, repeat one, repeat all, and a back button
+  that walks what you actually played rather than the index below you. The queue has to
+  live in the library because gapless arms the next track during the current one, so
+  something has to answer "what plays next" before the boundary arrives.
 - **A real audio graph**: clean gain staging, an insert point for your own EQ or effects
   (`setInserts`), and an analyser tap for a spectrum or waveform.
 - **A streaming fallback for long files**: a DJ set or a podcast streams through an
@@ -60,6 +68,28 @@ engine.setQueue([
 await engine.play(); // resumes the AudioContext on this user gesture
 ```
 
+### Queue and transport
+
+```ts
+const engine = new EkoWebEngine({ transition: "crossfade", crossfadeSeconds: 3 });
+
+engine.setQueue(tracks, 4); // start on the fifth track
+engine.setShuffle(true);
+engine.setRepeat("all"); // or "one" to loop the current track
+
+engine.next();
+engine.previous(); // steps back through what actually played, which matters under shuffle
+engine.skipTo(9); // what a playlist row's click handler calls
+
+engine.subscribe(() => {
+  const { index, queueLength, track, lastTransition } = engine.getSnapshot();
+});
+```
+
+`subscribe` plus `getSnapshot` is the `useSyncExternalStore` contract, so a React or Vue
+binding is a few lines. The snapshot deliberately leaves out `currentTime`: it changes
+every frame and would re-render your whole tree at 60fps. Read that from the engine.
+
 ### Drop into an existing `<audio>`-based player
 
 eko-web ships an `HTMLMediaElement`-compatible facade (`@rpxl/eko-web/element`) so it slots into
@@ -70,14 +100,19 @@ see the docs.)
 ## Status
 
 **v0.1, feature-complete engine, not yet published to npm.** Done: the engine (buffer
-playback with true gapless queueing, a streaming fallback for long files, loudness
-normalization from a tag or measured, click-free play/pause/seek), coded errors you can
-branch on, the `EkoAudioElement` facade (`@rpxl/eko-web/element`), and the ear-test player in
-`examples/player/`. See [`examples/README.md`](./examples/README.md); it needs a build
-first, it is not a no-build page. 145 unit tests, dual ESM/CJS build with types.
+playback with true gapless queueing, crossfade, a streaming fallback for long files,
+loudness normalization from a tag or measured, click-free play/pause/seek), the queue
+(shuffle, repeat, history), coded errors you can branch on, the `EkoAudioElement` facade
+(`@rpxl/eko-web/element`), and the ear-test player in `examples/player/`. See
+[`examples/README.md`](./examples/README.md); it needs a build first, it is not a no-build
+page. 221 unit tests, dual ESM/CJS build with types.
 
-Not yet: a React hook (`useEkoPlayer`), crossfade (today a boundary is either gapless or a
-gap), and a WebCodecs source strategy. See the player to ear-test gapless + normalization.
+Not yet: React and Vue bindings, a `media-session` subpath for OS media keys, and a
+WebCodecs source strategy.
+
+The example player is the fastest way to hear the parts a test can't prove. Load a few
+files, then try crossfade against gapless against gap on the same boundary, and shuffle
+with the queue position readout visible.
 
 ## License
 
