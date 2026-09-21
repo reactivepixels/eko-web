@@ -4,6 +4,13 @@ import type { EkoTrack } from "../../types";
 import type { AudioSourceStrategy, LoadedSource, LoadOptions } from "./source";
 
 /**
+ * How long to wait for `loadedmetadata` before giving up on a stalled connection.
+ * Metadata needs only the file header, so this is generous rather than tight. A later
+ * milestone can make it an option if anyone asks for one.
+ */
+export const METADATA_TIMEOUT_MS = 30_000;
+
+/**
  * Stream a track through an HTMLAudioElement wired into the graph with
  * `createMediaElementSource`.
  *
@@ -16,6 +23,12 @@ export class ElementSourceStrategy implements AudioSourceStrategy {
   readonly kind = "element" as const;
   readonly canGapless = false;
 
+  /**
+   * Per-instance, not per-process: a second player (or a fresh instance in an SPA that
+   * does not reload the module) must still see the guidance to supply `gainDb`.
+   */
+  private warned = false;
+
   constructor(private readonly createElement: () => HTMLAudioElement = defaultCreateElement) {}
 
   async load(track: EkoTrack, ctx: AudioContext, options: LoadOptions): Promise<LoadedSource> {
@@ -24,9 +37,33 @@ export class ElementSourceStrategy implements AudioSourceStrategy {
     element.preload = "auto";
     element.src = track.src;
 
-    await waitForMetadata(element, track.src);
+    try {
+      await waitForMetadata(element, track.src);
+    } catch (err) {
+      // A failed load must not leave the element pinned to a dead src, holding it in
+      // memory until the caller happens to drop its reference. Release it with the same
+      // discipline `ElementLoadedSource.dispose()` uses on the success path, then rethrow
+      // the original error unchanged.
+      element.pause();
+      element.src = "";
+      throw err;
+    }
+
     const node = ctx.createMediaElementSource(element);
-    return new ElementLoadedSource(track, element, node, elementNormGain(track, options));
+    return new ElementLoadedSource(track, element, node, this.elementNormGain(track, options));
+  }
+
+  private elementNormGain(track: EkoTrack, options: LoadOptions): number {
+    if (!options.normalize) return 1;
+    if (typeof track.gainDb === "number") return dbToLinear(track.gainDb);
+    if (!this.warned) {
+      this.warned = true;
+      console.warn(
+        "eko-web: streaming playback cannot measure loudness. Supply a track gainDb (for " +
+          "example from a ReplayGain tag) to normalize long files.",
+      );
+    }
+    return 1;
   }
 }
 
@@ -39,6 +76,13 @@ function defaultCreateElement(): HTMLAudioElement {
 
 function waitForMetadata(element: HTMLAudioElement, src: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      element.removeEventListener("loadedmetadata", onLoaded);
+      element.removeEventListener("error", onError);
+    };
     const onLoaded = (): void => {
       cleanup();
       resolve();
@@ -47,28 +91,20 @@ function waitForMetadata(element: HTMLAudioElement, src: string): Promise<void> 
       cleanup();
       reject(new EkoError("unsupported", `eko-web: the browser could not load ${src}`));
     };
-    const cleanup = (): void => {
-      element.removeEventListener("loadedmetadata", onLoaded);
-      element.removeEventListener("error", onError);
+    const onTimeout = (): void => {
+      cleanup();
+      reject(
+        new EkoError(
+          "fetch_failed",
+          `eko-web: ${src} accepted the connection but never delivered metadata`,
+        ),
+      );
     };
+
+    timer = setTimeout(onTimeout, METADATA_TIMEOUT_MS);
     element.addEventListener("loadedmetadata", onLoaded);
     element.addEventListener("error", onError);
   });
-}
-
-let warnedAboutUnmeasurableLoudness = false;
-
-function elementNormGain(track: EkoTrack, options: LoadOptions): number {
-  if (!options.normalize) return 1;
-  if (typeof track.gainDb === "number") return dbToLinear(track.gainDb);
-  if (!warnedAboutUnmeasurableLoudness) {
-    warnedAboutUnmeasurableLoudness = true;
-    console.warn(
-      "eko-web: streaming playback cannot measure loudness. Supply a track gainDb (for " +
-        "example from a ReplayGain tag) to normalize long files.",
-    );
-  }
-  return 1;
 }
 
 class ElementLoadedSource implements LoadedSource {
@@ -97,7 +133,8 @@ class ElementLoadedSource implements LoadedSource {
 
   /**
    * A media element cannot start on a given sample, so `when` is ignored. The engine must
-   * never schedule a future start for a source with `canGapless: false`.
+   * never schedule a future start for a source with `canGapless: false`. May be called
+   * more than once, since pause, play and seek all restart the same track.
    */
   start(_when: number, offset: number): void {
     this.element.currentTime = offset;

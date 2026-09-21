@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { ElementSourceStrategy } from "../src/engine/sources/element-source";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { ElementSourceStrategy, METADATA_TIMEOUT_MS } from "../src/engine/sources/element-source";
 import { MockAudioContext, MockMediaElement, MockGainNode } from "./mock-audio";
 
 function setup() {
@@ -24,6 +24,20 @@ function loadWithMetadata(
 }
 
 describe("ElementSourceStrategy", () => {
+  // Most tracks here load with normalize:true and no gainDb, which now warns on every
+  // fresh strategy (that is the point of the per-instance fix). Spy on console.warn for
+  // the whole suite so that behaviour is covered without leaving stderr noisy; individual
+  // tests that care about the warning assert against this same spy.
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   it("declares itself not gapless-capable", () => {
     const { strategy } = setup();
     expect(strategy.kind).toBe("element");
@@ -42,6 +56,18 @@ describe("ElementSourceStrategy", () => {
     const { ctx, element, strategy } = setup();
     const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
     expect(loaded.normGain).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("gainDb");
+  });
+
+  it("warns once per strategy instance, not once per process", async () => {
+    const { ctx, element, strategy } = setup();
+    await loadWithMetadata(strategy, ctx, element, { src: "/one.flac" });
+    // A second, independent strategy (a second player, or a fresh instance after an SPA
+    // navigation) must still get the warning: it is not a one-time-per-process flag.
+    const other = setup();
+    await loadWithMetadata(other.strategy, other.ctx, other.element, { src: "/two.flac" });
+    expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
   it("uses a track's gainDb when it has one", async () => {
@@ -66,6 +92,23 @@ describe("ElementSourceStrategy", () => {
     expect(element.paused).toBe(true);
   });
 
+  it("restarts on a second start() call with a different offset, as pause/play/seek require", async () => {
+    const { ctx, element, strategy } = setup();
+    const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
+    loaded.connect(new MockGainNode() as unknown as AudioNode);
+
+    loaded.start(0, 10);
+    expect(element.currentTime).toBeCloseTo(10, 6);
+    expect(element.paused).toBe(false);
+
+    loaded.stop();
+    expect(element.paused).toBe(true);
+
+    loaded.start(0, 55);
+    expect(element.currentTime).toBeCloseTo(55, 6);
+    expect(element.paused).toBe(false);
+  });
+
   it("reports the element's natural end", async () => {
     const { ctx, element, strategy } = setup();
     const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
@@ -85,5 +128,39 @@ describe("ElementSourceStrategy", () => {
     });
     setTimeout(() => element.fireError(), 0);
     await expect(promise).rejects.toMatchObject({ code: "unsupported" });
+  });
+
+  it("releases the element on a failed load, pausing it and clearing src", async () => {
+    const { ctx, element, strategy } = setup();
+    const pauseSpy = vi.spyOn(element, "pause");
+    const promise = strategy.load({ src: "/bad.xyz" }, ctx as unknown as AudioContext, {
+      normalize: false,
+      targetLufs: -16,
+    });
+    setTimeout(() => element.fireError(), 0);
+    await expect(promise).rejects.toMatchObject({ code: "unsupported" });
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
+    expect(element.src).toBe("");
+  });
+
+  it("rejects with a coded fetch_failed error when metadata never arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx, element, strategy } = setup();
+      const pauseSpy = vi.spyOn(element, "pause");
+      const promise = strategy.load({ src: "/stalled.flac" }, ctx as unknown as AudioContext, {
+        normalize: false,
+        targetLufs: -16,
+      });
+      const assertion = expect(promise).rejects.toMatchObject({ code: "fetch_failed" });
+      await vi.advanceTimersByTimeAsync(METADATA_TIMEOUT_MS);
+      await assertion;
+      // A stalled connection is still a failed load: the element should be released the
+      // same way any other failed load is.
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(element.src).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
