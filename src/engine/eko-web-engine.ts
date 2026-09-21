@@ -16,7 +16,10 @@ import type {
   TransitionKind,
 } from "../types";
 
-/** The next track, loaded and scheduled to start at exactly `startCtxTime` (gapless). */
+/**
+ * The next track, loaded and scheduled to start at exactly `startCtxTime`. Under gapless
+ * that is the boundary itself; under crossfade it is earlier, by the overlap.
+ */
 interface ArmedTrack {
   loaded: LoadedSource;
   index: number;
@@ -37,8 +40,8 @@ const DEFAULTS = {
  * Web Audio playback engine: each track plays through a selectable source strategy
  * (decode to buffer, or stream via a media element), through its own ReplayGain-style
  * normalization gain, into a shared graph (`input → fadeGain → userGain → destination`).
- * Gapless (sample-accurate) transitions only happen between buffered tracks; see `source`
- * and `bufferMaxBytes` in `EkoWebEngineOptions`.
+ * Sample-accurate transitions (gapless or crossfade) only happen between buffered tracks;
+ * see `source` and `bufferMaxBytes` in `EkoWebEngineOptions`.
  *
  * NOT bit-perfect. See the project README.
  */
