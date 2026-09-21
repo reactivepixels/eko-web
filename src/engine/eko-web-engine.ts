@@ -311,7 +311,11 @@ export class EkoWebEngine {
     // state this skip now owns.
     this.advanceToken++;
     const token = this.advanceToken;
-    const wasPlaying = !this._paused;
+    // A gap-advance forces `_paused` true purely as internal bookkeeping while it loads,
+    // and fully intends to resume; a skip that interrupts it should honour that intent too,
+    // not just the case where `_paused` was already false. The one exception is a real
+    // pause() called during that advance, which pauseRequestedDuringAdvance records.
+    const wasPlaying = !this._paused || (this.advancing && !this.pauseRequestedDuringAdvance);
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
       // a manual skip is still an abrupt stop for the current track, so it must not click.

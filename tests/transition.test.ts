@@ -221,6 +221,56 @@ describe("other transport calls during a gap-advance", () => {
     expect(changed).toHaveBeenCalledWith({ index: 1, track: tracks[1], transition: "gap" });
   });
 
+  it("next() that interrupts a gap-advance resumes playback instead of leaving it stuck paused", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    // Track A ends (starts loading track B in the background), then the consumer taps
+    // next() before that load settles, the same window as the double-report test above.
+    // `_paused` was forced true purely as the advance's own bookkeeping; the user was
+    // still mid-playback, so the skip that lands must not leave the engine stuck paused.
+    ctx.sources[0]!.fireEnded();
+    engine.next();
+
+    await flush();
+    await flush();
+    await flush();
+
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.paused).toBe(false);
+    expect(engine.state).toBe("playing");
+  });
+
+  it("next() that interrupts a gap-advance stays paused if pause() was called during that advance", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    // Track A ends (starts loading track B in the background). The consumer explicitly
+    // pauses during that load, then taps next() before the load settles. The explicit
+    // pause is a real request to stop, not internal bookkeeping, so it must still win.
+    ctx.sources[0]!.fireEnded();
+    engine.pause();
+    engine.next();
+
+    await flush();
+    await flush();
+    await flush();
+
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.paused).toBe(true);
+    expect(engine.state).not.toBe("playing");
+  });
+
   it("setQueue() during a gap-advance leaves the engine on the new queue", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup({ transition: "gap" });
