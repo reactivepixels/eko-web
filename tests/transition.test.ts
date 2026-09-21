@@ -485,19 +485,102 @@ describe("other transport calls during a gap-advance", () => {
 
   // advanceWithGap() re-checks peekNextIndex() after its own await (the same shape
   // armNext() already uses) so that a change to what plays next which does NOT bump
-  // advanceToken cannot make it commit to a target it never actually fetched. Nothing in
-  // today's public API can trigger that: every operation that moves the queue (setQueue(),
-  // next(), previous()) goes through skipTo() or setQueue() directly, and both already bump
-  // advanceToken, so this guard cannot be exercised honestly yet. It becomes exercisable,
-  // and needs a real test, once a shuffle or repeat toggle (setShuffle()/setRepeat(),
-  // milestone 2 task 3) can change peekNextIndex() without moving the queue's position or
-  // bumping advanceToken: hold a gap-advance's load open, flip shuffle or repeat mid-flight
-  // so peekNextIndex() now disagrees with the index the advance captured, let the load
-  // resolve, and assert the engine did not advance to the stale target (currentIndex and
-  // `current` still agree, and no trackchange fired for it).
-  it.todo(
-    "a shuffle/repeat change during an in-flight gap-advance does not commit to the stale target (needs Task 3's setShuffle()/setRepeat())",
-  );
+  // advanceToken cannot make it commit to a target it never actually fetched. setRepeat()
+  // and setShuffle() are exactly that: they change peekNextIndex() without moving the
+  // queue's position and without bumping advanceToken.
+  it("a repeat change during an in-flight gap-advance does not commit to the stale target", async () => {
+    // Same fetch-gating shape as "a skip's own resume is not blocked..." above: hold the
+    // advance's own fetch open so a change can land while it is still mid-flight.
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext, transition: "gap" });
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
+
+    let fetchCount = 0;
+    const gate: { release: (() => void) | null } = { release: null };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCount++;
+      const response = {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+      if (fetchCount === 2) {
+        // The advance's own fetch for track B: hold it open until the repeat change lands.
+        await new Promise<void>((resolve) => {
+          gate.release = () => resolve();
+        });
+      }
+      return response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(1);
+
+    const changed = vi.fn();
+    engine.on("trackchange", changed);
+
+    // Track A ends: the advance starts loading track B (fetch call #2, held open). While
+    // it is in flight, flip repeat to "one". peekNextIndex() now answers with the current
+    // index (still track A, 0) instead of the target (1) the advance captured, the same
+    // disagreement the guard in advanceWithGap() exists to catch.
+    ctx.sources[0]!.fireEnded();
+    engine.setRepeat("one");
+
+    // Give the held-open fetch call a tick to actually start before releasing it.
+    await flush();
+    gate.release?.();
+    await flush();
+    await flush();
+    await flush();
+
+    // The advance must not commit to the stale target: no trackchange reporting it, and
+    // the boundary is never recorded as a gap.
+    expect(changed).not.toHaveBeenCalled();
+    expect(engine.lastTransition).toBeNull();
+    expect(engine.currentIndex).toBe(0);
+  });
+});
+
+describe("shuffle and repeat re-arm", () => {
+  it("tears down an already-armed track and arms a fresh one when shuffle changes", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    // Track A is playing; track B is already armed for a gapless boundary.
+    expect(ctx.sources.length).toBe(2);
+    const armedBefore = ctx.sources[1]!;
+    expect(armedBefore.stopped).toBe(false);
+
+    engine.setShuffle(true);
+
+    // The stale armed source is torn down synchronously with the setter, before anything
+    // new is armed.
+    expect(armedBefore.stopped).toBe(true);
+
+    await flush();
+
+    // A fresh source was armed in its place.
+    expect(ctx.sources.length).toBe(3);
+    expect(ctx.sources[2]!.stopped).toBe(false);
+  });
 });
 
 describe("pending intent during a load", () => {

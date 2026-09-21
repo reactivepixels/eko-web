@@ -1,4 +1,5 @@
 import type { EkoError } from "./engine/errors";
+import type { RepeatMode } from "./queue/queue";
 
 /**
  * What actually happened at a track boundary.
@@ -71,6 +72,13 @@ export interface EkoWebEngineOptions {
    * like that.
    */
   bufferMaxBytes?: number;
+  /** Draw tracks in a shuffled order rather than queue order. Default: `false`. */
+  shuffle?: boolean;
+  /**
+   * What happens at the end of the queue, and whether a track repeats. `"one"` re-arms the
+   * same track, which under gapless gives a seamless loop. Default: `"none"`.
+   */
+  repeat?: RepeatMode;
 }
 
 /**

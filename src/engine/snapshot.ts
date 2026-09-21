@@ -1,5 +1,6 @@
 import type { EkoState, EkoTrack, TransitionKind } from "../types";
 import type { SourceKind } from "./sources/source";
+import type { RepeatMode } from "../queue/queue";
 
 /**
  * The engine's discrete state, as one immutable object.
@@ -20,6 +21,8 @@ export interface EkoSnapshot {
   readonly lastTransition: TransitionKind | null;
   /** How the current track is being played, or null when nothing is loaded. */
   readonly sourceKind: SourceKind | null;
+  readonly shuffle: boolean;
+  readonly repeat: RepeatMode;
 }
 
 export const EMPTY_SNAPSHOT: EkoSnapshot = Object.freeze({
@@ -32,6 +35,8 @@ export const EMPTY_SNAPSHOT: EkoSnapshot = Object.freeze({
   muted: false,
   lastTransition: null,
   sourceKind: null,
+  shuffle: false,
+  repeat: "none",
 });
 
 /**
@@ -48,6 +53,8 @@ export function snapshotsEqual(a: EkoSnapshot, b: EkoSnapshot): boolean {
     a.volume === b.volume &&
     a.muted === b.muted &&
     a.lastTransition === b.lastTransition &&
-    a.sourceKind === b.sourceKind
+    a.sourceKind === b.sourceKind &&
+    a.shuffle === b.shuffle &&
+    a.repeat === b.repeat
   );
 }

@@ -404,3 +404,16 @@ describe("EkoWebEngine config", () => {
     });
   });
 });
+
+describe("EkoWebEngine shuffle and repeat options", () => {
+  it("accepts them at construction", () => {
+    const ctx = new MockAudioContext();
+    const engine = new EkoWebEngine({
+      context: ctx as unknown as AudioContext,
+      shuffle: true,
+      repeat: "all",
+    });
+    expect(engine.shuffle).toBe(true);
+    expect(engine.repeat).toBe("all");
+  });
+});

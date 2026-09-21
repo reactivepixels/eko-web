@@ -6,7 +6,7 @@ import { rampTo, DEFAULT_FADE_SECONDS } from "./fades";
 import { selectStrategy } from "./sources/select";
 import type { LoadedSource } from "./sources/source";
 import { EMPTY_SNAPSHOT, snapshotsEqual, type EkoSnapshot } from "./snapshot";
-import { EkoQueue } from "../queue/queue";
+import { EkoQueue, type RepeatMode } from "../queue/queue";
 import type {
   EkoTrack,
   EkoState,
@@ -102,6 +102,8 @@ export class EkoWebEngine {
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
     this.injectedContext = options.context;
+    this.tracks.shuffle = options.shuffle ?? false;
+    this.tracks.repeat = options.repeat ?? "none";
   }
 
   // ── Events ──────────────────────────────────────────────────────────────────
@@ -141,6 +143,8 @@ export class EkoWebEngine {
       muted: this._muted,
       lastTransition: this._lastTransition,
       sourceKind: this.current?.kind ?? null,
+      shuffle: this.tracks.shuffle,
+      repeat: this.tracks.repeat,
     };
     if (snapshotsEqual(this.snapshot, next)) return;
     this.snapshot = next;
@@ -197,6 +201,12 @@ export class EkoWebEngine {
   /** What happened at the most recent boundary, or null before the first one. */
   get lastTransition(): TransitionKind | null {
     return this._lastTransition;
+  }
+  get shuffle(): boolean {
+    return this.tracks.shuffle;
+  }
+  get repeat(): RepeatMode {
+    return this.tracks.repeat;
   }
   get currentTime(): number {
     if (!this.current) return 0;
@@ -414,6 +424,24 @@ export class EkoWebEngine {
     const from = this.tracks.currentIndex;
     const target = this.tracks.stepBack();
     if (target >= 0) void this.skipTo(target, from);
+  }
+
+  /** Changing this reshuffles the remaining tracks; it does not disturb what is playing. */
+  setShuffle(on: boolean): void {
+    this.assertNotDestroyed();
+    this.tracks.shuffle = on;
+    this.publish();
+    // What plays next may have changed, so anything already armed is now the wrong track.
+    this.clearArmed();
+    void this.armNext();
+  }
+
+  setRepeat(mode: RepeatMode): void {
+    this.assertNotDestroyed();
+    this.tracks.repeat = mode;
+    this.publish();
+    this.clearArmed();
+    void this.armNext();
   }
 
   /**

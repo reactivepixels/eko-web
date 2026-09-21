@@ -100,3 +100,42 @@ describe("subscription contract", () => {
     expect(before).not.toHaveProperty("currentTime");
   });
 });
+
+describe("snapshot: shuffle and repeat", () => {
+  it("reports the defaults", () => {
+    const { engine } = setup();
+    const snapshot = engine.getSnapshot();
+    expect(snapshot.shuffle).toBe(false);
+    expect(snapshot.repeat).toBe("none");
+  });
+
+  it("publishes a new snapshot when shuffle changes", () => {
+    const { engine } = setup();
+    const before = engine.getSnapshot();
+    const listener = vi.fn();
+    engine.subscribe(listener);
+    engine.setShuffle(true);
+    expect(listener).toHaveBeenCalled();
+    const after = engine.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(after.shuffle).toBe(true);
+  });
+
+  it("publishes a new snapshot when repeat changes", () => {
+    const { engine } = setup();
+    const listener = vi.fn();
+    engine.subscribe(listener);
+    engine.setRepeat("all");
+    expect(listener).toHaveBeenCalled();
+    expect(engine.getSnapshot().repeat).toBe("all");
+  });
+
+  it("does not notify when a setter changes nothing", () => {
+    const { engine } = setup();
+    engine.setShuffle(true);
+    const listener = vi.fn();
+    engine.subscribe(listener);
+    engine.setShuffle(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
