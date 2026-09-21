@@ -44,7 +44,6 @@ export class EkoWebEngine {
   private emitter = new Emitter();
   private readonly normalize: boolean;
   private readonly targetLufs: number;
-  private readonly gapless: boolean;
   private readonly transition: TransitionKind;
   private _lastTransition: TransitionKind | null = null;
   private readonly fadeSeconds: number;
@@ -77,12 +76,16 @@ export class EkoWebEngine {
   // wishes once the load settles.
   private advancing = false;
   private pauseRequestedDuringAdvance = false;
+  // Bumped by setQueue(), skipTo() and destroy(): the three calls that make an in-flight
+  // loadIndex() stale. loadIndex(), skipTo() and advanceWithGap() capture the current token
+  // when they start and check it again after their await, so a superseded load never assigns
+  // state or emits events for a track the engine has already moved past.
+  private advanceToken = 0;
   private rafHandle: number | null = null;
 
   constructor(options: EkoWebEngineOptions = {}) {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
-    this.gapless = options.gapless ?? DEFAULTS.gapless;
     // `gapless: false` is the older spelling of `transition: "gap"`.
     this.transition =
       options.transition ?? (options.gapless === false ? "gap" : DEFAULTS.transition);
@@ -113,9 +116,19 @@ export class EkoWebEngine {
   get muted(): boolean {
     return this._muted;
   }
-  /** The engine's resolved options. */
-  get config(): { normalize: boolean; targetLufs: number; gapless: boolean } {
-    return { normalize: this.normalize, targetLufs: this.targetLufs, gapless: this.gapless };
+  /** The engine's resolved options. `gapless` and `transition` always agree with each other. */
+  get config(): {
+    normalize: boolean;
+    targetLufs: number;
+    gapless: boolean;
+    transition: TransitionKind;
+  } {
+    return {
+      normalize: this.normalize,
+      targetLufs: this.targetLufs,
+      gapless: this.transition === "gapless",
+      transition: this.transition,
+    };
   }
   get duration(): number {
     return this.current?.duration ?? 0;
@@ -136,11 +149,14 @@ export class EkoWebEngine {
 
   // ── Queue / load ────────────────────────────────────────────────────────────
   setQueue(tracks: EkoTrack[]): void {
+    // Invalidate any in-flight load (a gap-advance, a skip) before it can assign state
+    // this new queue owns now.
+    this.advanceToken++;
     this.teardown();
     this.queue = tracks.slice();
     this.index = tracks.length > 0 ? 0 : -1;
     this._paused = true;
-    if (this.index >= 0) void this.loadIndex(0);
+    if (this.index >= 0) void this.loadIndex(0, this.advanceToken);
   }
 
   load(srcOrTrack: string | EkoTrack): void {
@@ -148,13 +164,23 @@ export class EkoWebEngine {
     this.setQueue([track]);
   }
 
-  private async loadIndex(index: number): Promise<void> {
+  /**
+   * `token` is the value of `advanceToken` when this load started (see its declaration).
+   * Re-checked after the await: a load superseded by a newer setQueue(), skipTo() or
+   * destroy() call must not assign `current`/`index` or emit anything, since a later call
+   * already owns the engine's state by the time this one would.
+   */
+  private async loadIndex(index: number, token: number): Promise<void> {
     const track = this.queue[index];
     if (!track) return;
     this.setState("loading");
     this.emitter.emit("loadstart", { index });
     try {
       const loaded = await this.loadTrack(track);
+      if (token !== this.advanceToken) {
+        loaded.dispose();
+        return;
+      }
       loaded.connect(this.graph!.input);
       loaded.onEnded(() => this.handleSourceEnded());
       this.current?.dispose();
@@ -170,6 +196,8 @@ export class EkoWebEngine {
         void this.play();
       }
     } catch (error) {
+      // A superseded load's own failure is not this engine's problem to report either.
+      if (token !== this.advanceToken) return;
       this.setState("error");
       this.emitter.emit("error", { error: asEkoError(error, "decode_failed") });
     }
@@ -189,6 +217,15 @@ export class EkoWebEngine {
 
   // ── Transport ───────────────────────────────────────────────────────────────
   async play(): Promise<void> {
+    if (this.advancing) {
+      // A gap-advance is mid-load; `current` still points at the just-ended, disposable
+      // source, so starting it now would audibly replay the wrong track. A resume is
+      // already queued for when the load settles (see advanceWithGap), so play() and
+      // pause() during this window are just competing intents: treat this as cancelling
+      // any pause requested in the meantime, and otherwise do nothing.
+      this.pauseRequestedDuringAdvance = false;
+      return;
+    }
     const ctx = this.ensureGraph();
     if (ctx.state === "suspended") {
       try {
@@ -270,6 +307,10 @@ export class EkoWebEngine {
   }
 
   private async skipTo(index: number): Promise<void> {
+    // Invalidate any in-flight load (a gap-advance, another skip) before it can assign
+    // state this skip now owns.
+    this.advanceToken++;
+    const token = this.advanceToken;
     const wasPlaying = !this._paused;
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
@@ -283,7 +324,12 @@ export class EkoWebEngine {
     this.clearArmed();
     this._paused = true;
     this.stopRaf();
-    await this.loadIndex(index);
+    await this.loadIndex(index, token);
+    if (token !== this.advanceToken) {
+      // Superseded (setQueue() or a newer skip) while this one was loading; whichever call
+      // superseded it owns the engine's state now.
+      return;
+    }
     this._lastTransition = "gap";
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
@@ -326,6 +372,8 @@ export class EkoWebEngine {
   }
 
   destroy(): void {
+    // Invalidate any in-flight load so it cannot resurrect a context or state after this.
+    this.advanceToken++;
     this.teardown();
     this.current?.dispose();
     this.current = null;
@@ -415,8 +463,15 @@ export class EkoWebEngine {
     this.stopRaf();
     this._paused = true;
     this.advancing = true;
-    await this.loadIndex(index);
+    const token = this.advanceToken;
+    await this.loadIndex(index, token);
     this.advancing = false;
+    if (token !== this.advanceToken) {
+      // Superseded by setQueue(), skipTo() or destroy() while this was loading. Whichever
+      // call superseded it owns the engine's state now; this advance has nothing left to
+      // do, not even reporting the boundary, since it never actually reached track `index`.
+      return;
+    }
     this._lastTransition = "gap";
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });

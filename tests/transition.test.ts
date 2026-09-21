@@ -163,3 +163,158 @@ describe("transition reporting", () => {
     expect(ctx.sources.length).toBe(1); // no new source was ever started
   });
 });
+
+describe("other transport calls during a gap-advance", () => {
+  it("play() does not restart the old, already-ended source", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(1);
+
+    // Track A ends and the engine starts loading track B in the background. Before that
+    // settles, a play/pause toggle reacting to `engine.paused === true` calls play() again.
+    ctx.sources[0]!.fireEnded();
+    expect(engine.paused).toBe(true); // advancing also reads as paused
+    void engine.play();
+
+    // If play() wrongly restarted the stale source, a second BufferSourceNode would exist
+    // right now, immediately, well before track B's own load could possibly have settled.
+    expect(ctx.sources.length).toBe(1);
+
+    await flush();
+    await flush();
+
+    // Track B's own load finishes and resumes normally: exactly one further source, not two.
+    expect(ctx.sources.length).toBe(2);
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.state).toBe("playing");
+  });
+
+  it("next() during a gap-advance does not double-load or double-report the boundary", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    const changed = vi.fn();
+    engine.on("trackchange", changed);
+
+    // Track A ends (starts loading track B in the background), then the consumer taps
+    // next() before that load settles. next() targets the same index the advance is
+    // already loading, since `currentIndex` has not moved yet.
+    ctx.sources[0]!.fireEnded();
+    engine.next();
+
+    await flush();
+    await flush();
+    await flush();
+
+    expect(engine.currentIndex).toBe(1);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledWith({ index: 1, track: tracks[1], transition: "gap" });
+  });
+
+  it("setQueue() during a gap-advance leaves the engine on the new queue", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    const changed = vi.fn();
+    const canplayed = vi.fn();
+    engine.on("trackchange", changed);
+    engine.on("canplay", canplayed);
+    const newTracks = [{ id: "c", src: "/c.flac" }];
+
+    // Track A ends (starts loading track B in the background), then the consumer replaces
+    // the whole queue with a single, unrelated track before that load settles.
+    ctx.sources[0]!.fireEnded();
+    engine.setQueue(newTracks);
+    await flush();
+    await flush();
+    await flush();
+
+    // The engine must be on the new, single-track queue, not track B's index (which would
+    // now be out of range) and not a stray trackchange for a track it never really reached.
+    expect(engine.currentIndex).toBe(0);
+    expect(engine.state).toBe("ready");
+    expect(changed).not.toHaveBeenCalled();
+    // Exactly one canplay, for the new queue's only track: the superseded load for the old
+    // queue's track B must never reach far enough to report itself, regardless of which of
+    // the two concurrent loads happens to settle first.
+    expect(canplayed).toHaveBeenCalledTimes(1);
+    expect(canplayed).toHaveBeenCalledWith({ index: 0 });
+    expect(ctx.sources.length).toBe(1); // track A's source only; B was never started
+  });
+
+  it("setQueue() during a manual skip leaves the engine on the new queue, no stray trackchange", async () => {
+    restore = stubFetch();
+    const { engine, tracks } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+
+    const changed = vi.fn();
+    const canplayed = vi.fn();
+    engine.on("trackchange", changed);
+    engine.on("canplay", canplayed);
+    // Same length as the original queue and long enough that index 1 is in range, so a
+    // stray trackchange from the superseded skip would report a real (but wrong) track
+    // instead of being saved by an out-of-range lookup.
+    const newTracks = [
+      { id: "c", src: "/c.flac" },
+      { id: "d", src: "/d.flac" },
+    ];
+
+    // A manual skip starts loading track B, then the consumer replaces the whole queue
+    // before that load settles. The same window this whole suite is about, but between
+    // two consumer-triggered calls instead of a natural end and a consumer call.
+    engine.next();
+    engine.setQueue(newTracks);
+    await flush();
+    await flush();
+    await flush();
+
+    expect(engine.currentIndex).toBe(0);
+    expect(changed).not.toHaveBeenCalled();
+    expect(canplayed).toHaveBeenCalledTimes(1);
+    expect(canplayed).toHaveBeenCalledWith({ index: 0 });
+  });
+
+  it("destroy() during a gap-advance does not let the advance resume playback afterward", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(1);
+
+    // Track A ends and the engine starts loading track B in the background. Before that
+    // settles, the consumer unmounts and destroys the engine, which is a normal thing to
+    // do right as a track naturally ends, not a contrived edge case.
+    ctx.sources[0]!.fireEnded();
+    engine.destroy();
+
+    await flush();
+    await flush();
+
+    // The advance must not resurrect playback, or the graph/context machinery destroy()
+    // just tore down, after destroy(): no further source was ever built, and no second
+    // EkoGraph (a fresh rgGain/fadeGain/userGain triple) was ever constructed.
+    expect(ctx.sources.length).toBe(1);
+    expect(ctx.gains.length).toBe(3);
+    expect(engine.state).not.toBe("playing");
+  });
+});

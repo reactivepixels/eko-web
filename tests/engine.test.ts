@@ -226,3 +226,17 @@ describe("EkoWebEngine error codes", () => {
     expect(engine.paused).toBe(false);
   });
 });
+
+describe("EkoWebEngine config", () => {
+  it("reports the resolved transition, not the raw gapless option, when they would disagree", () => {
+    // The older `gapless: false` option and the newer `transition` option must resolve to
+    // the same reported state; `config` must reflect the resolved policy either way.
+    const { engine: byGapless } = makeEngine(undefined, { gapless: false });
+    expect(byGapless.config.transition).toBe("gap");
+    expect(byGapless.config.gapless).toBe(false);
+
+    const { engine: byTransition } = makeEngine(undefined, { transition: "gap" });
+    expect(byTransition.config.transition).toBe("gap");
+    expect(byTransition.config.gapless).toBe(false);
+  });
+});
