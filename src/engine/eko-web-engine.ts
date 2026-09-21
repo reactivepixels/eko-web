@@ -138,8 +138,8 @@ export class EkoWebEngine {
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
     this.injectedContext = options.context;
-    this.tracks.shuffle = options.shuffle ?? false;
-    this.tracks.repeat = options.repeat ?? "none";
+    this.tracks.setShuffle(options.shuffle ?? false);
+    this.tracks.setRepeat(options.repeat ?? "none");
   }
 
   // ── Events ──────────────────────────────────────────────────────────────────
@@ -559,7 +559,7 @@ export class EkoWebEngine {
     // `on` against the old value, also skips the teardown on the rarer case where the flag
     // flips but the bag's first draw happens to land back on the same index.
     const nextBefore = this.tracks.peekNextIndex();
-    this.tracks.shuffle = on;
+    this.tracks.setShuffle(on);
     this.publish();
     if (this.tracks.peekNextIndex() === nextBefore) return;
     // What plays next changed, so anything already armed is now the wrong track.
@@ -570,7 +570,7 @@ export class EkoWebEngine {
   setRepeat(mode: RepeatMode): void {
     this.assertNotDestroyed();
     const nextBefore = this.tracks.peekNextIndex();
-    this.tracks.repeat = mode;
+    this.tracks.setRepeat(mode);
     this.publish();
     if (this.tracks.peekNextIndex() === nextBefore) return;
     this.clearArmed();

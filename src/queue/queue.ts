@@ -58,7 +58,7 @@ export class EkoQueue {
     return this._shuffle;
   }
 
-  set shuffle(on: boolean) {
+  setShuffle(on: boolean): void {
     if (this._shuffle === on) return;
     this._shuffle = on;
     // A fresh pass either way: turning shuffle on should not inherit a sequential position
@@ -70,7 +70,7 @@ export class EkoQueue {
     return this._repeat;
   }
 
-  set repeat(mode: RepeatMode) {
+  setRepeat(mode: RepeatMode): void {
     // Switching INTO "all" over an empty shuffle bag is the one other moment (besides
     // advance() itself) that makes the bag relevant again: with repeat "none" or "one" an
     // empty bag is a dead end by design, but "all" promises the queue keeps going, and

@@ -55,7 +55,7 @@ describe("EkoQueue sequential", () => {
 describe("EkoQueue repeat", () => {
   it('repeat "all" wraps past the end', () => {
     const q = make(3);
-    q.repeat = "all";
+    q.setRepeat("all");
     q.jumpTo(2);
     expect(q.peekNext()?.id).toBe("0");
     expect(q.advance()?.id).toBe("0");
@@ -63,7 +63,7 @@ describe("EkoQueue repeat", () => {
 
   it('repeat "one" peeks and advances to the same track', () => {
     const q = make(3);
-    q.repeat = "one";
+    q.setRepeat("one");
     q.jumpTo(1);
     expect(q.peekNext()?.id).toBe("1");
     expect(q.advance()?.id).toBe("1");
@@ -78,7 +78,7 @@ describe("EkoQueue repeat", () => {
 
   it('peekNextIndex(true) ignores repeat "one" and reports the real next index', () => {
     const q = make(3);
-    q.repeat = "one";
+    q.setRepeat("one");
     q.jumpTo(1);
     expect(q.peekNextIndex()).toBe(1); // the boundary: loops on itself
     expect(q.peekNextIndex(true)).toBe(2); // manual Next: the real next track
@@ -86,7 +86,7 @@ describe("EkoQueue repeat", () => {
 
   it('advance(true) under repeat "one" moves forward instead of looping', () => {
     const q = make(3);
-    q.repeat = "one";
+    q.setRepeat("one");
     q.jumpTo(1);
     expect(q.advance(true)?.id).toBe("2");
     expect(q.currentIndex).toBe(2);
@@ -96,7 +96,7 @@ describe("EkoQueue repeat", () => {
 describe("EkoQueue shuffle", () => {
   it("draws every track once before repeating any", () => {
     const q = make(8);
-    q.shuffle = true;
+    q.setShuffle(true);
     const seen = [q.currentIndex];
     for (let i = 0; i < 7; i++) {
       const next = q.advance();
@@ -108,7 +108,7 @@ describe("EkoQueue shuffle", () => {
 
   it("peek matches the track advance actually moves to, every time", () => {
     const q = make(10);
-    q.shuffle = true;
+    q.setShuffle(true);
     for (let i = 0; i < 9; i++) {
       const peeked = q.peekNext();
       const advanced = q.advance();
@@ -118,7 +118,7 @@ describe("EkoQueue shuffle", () => {
 
   it("peek is stable across repeated calls", () => {
     const q = make(10);
-    q.shuffle = true;
+    q.setShuffle(true);
     const first = q.peekNext();
     expect(q.peekNext()).toEqual(first);
     expect(q.peekNext()).toEqual(first);
@@ -126,7 +126,7 @@ describe("EkoQueue shuffle", () => {
 
   it('a shuffled bag that empties ends playback under repeat "none"', () => {
     const q = make(3);
-    q.shuffle = true;
+    q.setShuffle(true);
     q.advance();
     q.advance();
     expect(q.peekNext()).toBeNull();
@@ -135,8 +135,8 @@ describe("EkoQueue shuffle", () => {
 
   it('a shuffled bag refills under repeat "all"', () => {
     const q = make(3);
-    q.shuffle = true;
-    q.repeat = "all";
+    q.setShuffle(true);
+    q.setRepeat("all");
     q.advance();
     q.advance();
     expect(q.peekNext()).not.toBeNull();
@@ -147,8 +147,8 @@ describe("EkoQueue shuffle", () => {
     // Two is the smallest queue where the bag genuinely empties and refills, rather than
     // being forced empty by excluding the only track there is.
     const q = make(2);
-    q.shuffle = true;
-    q.repeat = "all";
+    q.setShuffle(true);
+    q.setRepeat("all");
     const seen = new Set([q.currentIndex]);
     for (let i = 0; i < 4; i++) {
       const next = q.advance();
@@ -160,8 +160,8 @@ describe("EkoQueue shuffle", () => {
 
   it('a single track loops on itself under shuffle plus repeat "all"', () => {
     const q = make(1);
-    q.shuffle = true;
-    q.repeat = "all";
+    q.setShuffle(true);
+    q.setRepeat("all");
     expect(q.peekNext()?.id).toBe("0");
     expect(q.advance()?.id).toBe("0");
     expect(q.peekNext()?.id).toBe("0");
@@ -170,20 +170,20 @@ describe("EkoQueue shuffle", () => {
 
   it('a single track under shuffle has nowhere to go without repeat "all"', () => {
     const q = make(1);
-    q.shuffle = true;
+    q.setShuffle(true);
     expect(q.peekNext()).toBeNull();
     expect(q.advance()).toBeNull();
   });
 
   it('setting repeat to "all" after a shuffled bag has drained under repeat "none" revives it', () => {
     const q = make(4);
-    q.shuffle = true;
+    q.setShuffle(true);
     q.advance();
     q.advance();
     q.advance();
     // Bag is now empty: repeat "none" has nothing left to offer.
     expect(q.peekNext()).toBeNull();
-    q.repeat = "all";
+    q.setRepeat("all");
     // Flipping to "all" over an empty bag must refill it immediately, or the queue can
     // never recover: nothing else touches the bag from here.
     expect(q.peekNextIndex()).not.toBe(-1);
@@ -192,9 +192,9 @@ describe("EkoQueue shuffle", () => {
 
   it("turning shuffle off returns to sequential order from where it is", () => {
     const q = make(5);
-    q.shuffle = true;
+    q.setShuffle(true);
     q.advance();
-    q.shuffle = false;
+    q.setShuffle(false);
     const here = q.currentIndex;
     const expected = here + 1 < 5 ? String(here + 1) : null;
     // `?? null` matters: `?.id` on a null track is undefined, which never equals null.
@@ -205,7 +205,7 @@ describe("EkoQueue shuffle", () => {
 describe("EkoQueue history", () => {
   it("previous retraces what was actually played, not the index below", () => {
     const q = make(6);
-    q.shuffle = true;
+    q.setShuffle(true);
     const played = [q.currentIndex];
     q.advance();
     played.push(q.currentIndex);
@@ -231,7 +231,7 @@ describe("EkoQueue history", () => {
 describe("EkoQueue stepBack", () => {
   it("walking forward three tracks under shuffle then back three times retraces exactly what was heard", () => {
     const q = make(8);
-    q.shuffle = true;
+    q.setShuffle(true);
     const played = [q.currentIndex];
     q.advance();
     played.push(q.currentIndex);
@@ -260,7 +260,7 @@ describe("EkoQueue stepBack", () => {
     // stepBack() puts the index it is leaving back on the FRONT of the bag rather than
     // rebuilding the pool, so the pass survives: the very next draw is that same track.
     const q = make(8);
-    q.shuffle = true;
+    q.setShuffle(true);
     q.advance();
     q.advance();
     const beforeBack = q.currentIndex;
@@ -270,7 +270,7 @@ describe("EkoQueue stepBack", () => {
 
   it("previous() preserves the pass the same way, having delegated to stepBack()", () => {
     const q = make(8);
-    q.shuffle = true;
+    q.setShuffle(true);
     q.advance();
     q.advance();
     const beforeBack = q.currentIndex;
@@ -280,7 +280,7 @@ describe("EkoQueue stepBack", () => {
 
   it("jumpTo removes the destination from the bag instead of rebuilding the whole pool", () => {
     const q = make(8);
-    q.shuffle = true;
+    q.setShuffle(true);
     const seen = [q.currentIndex];
     q.advance();
     seen.push(q.currentIndex);
@@ -304,7 +304,7 @@ describe("EkoQueue stepBack", () => {
 describe("EkoQueue setTracks", () => {
   it("resets history and the bag", () => {
     const q = make(5);
-    q.shuffle = true;
+    q.setShuffle(true);
     q.advance();
     q.advance();
     q.setTracks(tracks(3));
