@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
 import { trackEndTime } from "../src/engine/scheduling";
-import { MockAudioContext, MockMediaElement, makeToneBuffer, stubFetch } from "./mock-audio";
+import {
+  MockAudioContext,
+  MockMediaElement,
+  makeToneBuffer,
+  stubFetch,
+  sourceGains,
+} from "./mock-audio";
 
 /** Flush pending microtasks (lets the async armNext decode + schedule complete). */
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -33,7 +39,7 @@ afterEach(() => {
 });
 
 describe("gapless", () => {
-  it("schedules the next track to start exactly when the current ends", async () => {
+  it("schedules the next track to start exactly when the current ends, each with its own gain", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup(2);
     const ready = whenReady(engine);
@@ -45,9 +51,16 @@ describe("gapless", () => {
     expect(ctx.sources.length).toBe(2); // current + armed
     const endTime = trackEndTime(0, 0.5, 0); // started at ctx 0, 0.5s track → ends at 0.5
     expect(ctx.sources[1]!.startWhen).toBeCloseTo(endTime, 6);
-    // The shared normalization gain is scheduled to jump at the boundary.
-    const jumped = ctx.gains[0]!.gain.scheduled.some((s) => Math.abs(s.time - endTime) < 1e-6);
-    expect(jumped).toBe(true);
+
+    // Each source carries its own normalization gain, created when connect() runs, so
+    // there is no longer a single shared node whose value has to jump at the boundary:
+    // the current and armed tracks are simply two distinct gain nodes with nothing
+    // scheduled on either of them.
+    const gains = sourceGains(ctx);
+    expect(gains.length).toBe(2);
+    expect(gains[0]).not.toBe(gains[1]);
+    expect(gains[0]!.gain.scheduled).toEqual([]);
+    expect(gains[1]!.gain.scheduled).toEqual([]);
   });
 
   it("promotes the armed track on the boundary and emits trackchange", async () => {

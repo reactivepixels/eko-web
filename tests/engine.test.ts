@@ -2,7 +2,13 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
 import { EkoError } from "../src/engine/errors";
 import { measureLoudnessLufs, samplePeak, computeNormalizationGain } from "../src/engine/loudness";
-import { MockAudioContext, MockMediaElement, makeToneBuffer, stubFetch } from "./mock-audio";
+import {
+  MockAudioContext,
+  MockMediaElement,
+  makeToneBuffer,
+  stubFetch,
+  sourceGains,
+} from "./mock-audio";
 
 function makeEngine(buffer = makeToneBuffer(0.5), opts = {}) {
   const ctx = new MockAudioContext();
@@ -55,7 +61,7 @@ describe("EkoWebEngine load", () => {
 });
 
 describe("EkoWebEngine normalization", () => {
-  it("applies the clamp-to-peak normalization gain to rgGain on play", async () => {
+  it("applies the clamp-to-peak normalization gain to the source's own gain on play", async () => {
     restoreFetch = stubFetch();
     const buffer = makeToneBuffer(0.5);
     const { ctx, engine } = makeEngine(buffer, { targetLufs: -16 });
@@ -70,19 +76,20 @@ describe("EkoWebEngine normalization", () => {
       samplePeak(channels),
     );
     await engine.play();
-    // gains[0] is rgGain (created first in ensureGraph).
-    expect(ctx.gains[0]!.gain.value).toBeCloseTo(expected, 6);
-    expect(ctx.gains[0]!.gain.value * samplePeak(channels)).toBeLessThanOrEqual(1.0001);
+    // The graph's own three gains (input, fadeGain, userGain) sit at index 0-2; the
+    // source's normalization gain lands after them, created when connect() runs.
+    expect(sourceGains(ctx)[0]!.gain.value).toBeCloseTo(expected, 6);
+    expect(sourceGains(ctx)[0]!.gain.value * samplePeak(channels)).toBeLessThanOrEqual(1.0001);
   });
 
-  it("with normalize:false the rgGain stays at unity", async () => {
+  it("with normalize:false the source's own gain stays at unity", async () => {
     restoreFetch = stubFetch();
     const { ctx, engine } = makeEngine(makeToneBuffer(0.5), { normalize: false });
     const ready = whenReady(engine);
     engine.setQueue([{ src: "/a.flac" }]);
     await ready;
     await engine.play();
-    expect(ctx.gains[0]!.gain.value).toBeCloseTo(1, 6);
+    expect(sourceGains(ctx)[0]!.gain.value).toBeCloseTo(1, 6);
   });
 });
 
@@ -114,7 +121,7 @@ describe("EkoWebEngine transport", () => {
     engine.setQueue([{ src: "/a.flac" }]);
     await ready;
     await engine.play(); // build the graph
-    const userGain = ctx.gains[2]!; // rg, fade, user
+    const userGain = ctx.gains[2]!; // input, fade, user
 
     engine.setVolume(0.5);
     expect(userGain.gain.value).toBeCloseTo(0.5, 6);
@@ -294,7 +301,7 @@ describe("EkoWebEngine destroy()", () => {
     expect(() => engine.analyser).toThrow(expect.objectContaining({ code: "destroyed" }));
     await expect(engine.play()).rejects.toMatchObject({ code: "destroyed" });
 
-    // None of the above resurrected the graph: no fresh rgGain/fadeGain/userGain triple.
+    // None of the above resurrected the graph: no fresh input/fadeGain/userGain triple.
     expect(ctx.gains.length).toBe(gainsBefore);
   });
 

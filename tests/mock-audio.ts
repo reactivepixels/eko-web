@@ -145,7 +145,7 @@ export class MockAudioContext {
   state: "suspended" | "running" | "closed" = "running";
   currentTime = 0;
   destination = {};
-  /** Every gain node created, in order: [rgGain, fadeGain, userGain]. */
+  /** Every gain node created, in order: [input, fadeGain, userGain, ...per-source gains]. */
   gains: MockGainNode[] = [];
   /** Every buffer source created. */
   sources: MockBufferSource[] = [];
@@ -187,6 +187,11 @@ export class MockAudioContext {
   async close(): Promise<void> {
     this.state = "closed";
   }
+}
+
+/** The gain nodes created after the graph's three, in creation order: one per source. */
+export function sourceGains(ctx: MockAudioContext): MockGainNode[] {
+  return ctx.gains.slice(3);
 }
 
 /** A 1 kHz sine AudioBuffer for loudness/normalization tests. */

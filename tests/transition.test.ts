@@ -350,6 +350,7 @@ describe("other transport calls during a gap-advance", () => {
     await engine.play();
     await flush();
     expect(ctx.sources.length).toBe(1);
+    const gainsBefore = ctx.gains.length; // the graph's three, plus track A's own
 
     // Track A ends and the engine starts loading track B in the background. Before that
     // settles, the consumer unmounts and destroys the engine, which is a normal thing to
@@ -361,10 +362,11 @@ describe("other transport calls during a gap-advance", () => {
     await flush();
 
     // The advance must not resurrect playback, or the graph/context machinery destroy()
-    // just tore down, after destroy(): no further source was ever built, and no second
-    // EkoGraph (a fresh rgGain/fadeGain/userGain triple) was ever constructed.
+    // just tore down, after destroy(): no further source (and so no further gain) was
+    // ever built, and no second EkoGraph (a fresh input/fadeGain/userGain triple) was
+    // ever constructed.
     expect(ctx.sources.length).toBe(1);
-    expect(ctx.gains.length).toBe(3);
+    expect(ctx.gains.length).toBe(gainsBefore);
     expect(engine.state).not.toBe("playing");
   });
 

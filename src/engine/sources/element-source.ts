@@ -50,7 +50,7 @@ export class ElementSourceStrategy implements AudioSourceStrategy {
     }
 
     const node = ctx.createMediaElementSource(element);
-    return new ElementLoadedSource(track, element, node, this.elementNormGain(track, options));
+    return new ElementLoadedSource(track, ctx, element, node, this.elementNormGain(track, options));
   }
 
   private elementNormGain(track: EkoTrack, options: LoadOptions): number {
@@ -115,9 +115,11 @@ class ElementLoadedSource implements LoadedSource {
   private readonly onElementEnded = (): void => this.endedFn?.();
   private startErrorFn: ((error: unknown) => void) | null = null;
   private disposed = false;
+  private gainNode: GainNode | null = null;
 
   constructor(
     readonly track: EkoTrack,
+    private readonly ctx: AudioContext,
     private readonly element: HTMLAudioElement,
     private readonly node: MediaElementAudioSourceNode,
     readonly normGain: number,
@@ -141,7 +143,15 @@ class ElementLoadedSource implements LoadedSource {
   }
 
   connect(destination: AudioNode): void {
-    this.node.connect(destination);
+    const gain = this.ctx.createGain();
+    gain.gain.value = this.normGain;
+    gain.connect(destination);
+    this.gainNode = gain;
+    this.node.connect(gain);
+  }
+
+  get gain(): GainNode | null {
+    return this.gainNode;
   }
 
   /**
@@ -187,6 +197,8 @@ class ElementLoadedSource implements LoadedSource {
     this.element.pause();
     this.element.src = "";
     this.node.disconnect();
+    this.gainNode?.disconnect();
+    this.gainNode = null;
     this.endedFn = null;
     this.startErrorFn = null;
   }

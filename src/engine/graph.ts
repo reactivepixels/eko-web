@@ -1,19 +1,23 @@
 /**
  * The engine's audio graph:
  *
- *   source -> rgGain -> [user inserts] -> fadeGain -> userGain -> [analyser] -> destination
+ *   source -> input -> [user inserts] -> fadeGain -> userGain -> [analyser] -> destination
  *
- * Inserts sit after normalization so a user EQ sees a consistent input level, and before
- * the fader so it is not fighting volume. The analyser sits last so it reflects what is
- * actually heard.
+ * Inserts sit after normalization (which now lives on each source's own gain, ahead of
+ * `input`) so a user EQ sees a consistent input level, and before the fader so it is not
+ * fighting volume. The analyser sits last so it reflects what is actually heard.
  *
  * The chain is stable across a gapless promotion: sources connect into `input` and are
  * replaced freely, while everything downstream is untouched.
  */
 export class EkoGraph {
   readonly context: AudioContext;
-  /** Normalization gain. Jumps to the next track's value at a gapless boundary. */
-  readonly rgGain: GainNode;
+  /**
+   * A stable passthrough at unity that every source connects into. It exists so that
+   * `setInserts()` can rewire everything downstream without orphaning a playing source,
+   * and so that per-source levels live on the sources rather than here.
+   */
+  readonly input: GainNode;
   /** Short ramps that keep play, pause and seek click-free. */
   readonly fadeGain: GainNode;
   /** The consumer's volume and mute. */
@@ -25,15 +29,10 @@ export class EkoGraph {
   constructor(context: AudioContext) {
     this.context = context;
     // Creation order is load-bearing: tests index ctx.gains by position.
-    this.rgGain = context.createGain();
+    this.input = context.createGain();
     this.fadeGain = context.createGain();
     this.userGain = context.createGain();
     this.connectChain();
-  }
-
-  /** The node sources connect into. */
-  get input(): AudioNode {
-    return this.rgGain;
   }
 
   /**
@@ -66,7 +65,7 @@ export class EkoGraph {
   }
 
   private disconnectAll(): void {
-    this.rgGain.disconnect();
+    this.input.disconnect();
     // Called from setInserts() too, after this.inserts has already been reassigned to the
     // new array, so this pass is a no-op there: the new nodes have no outgoing connections
     // yet. It only does real work on the destroy() path, for the previous insert chain.
@@ -80,7 +79,7 @@ export class EkoGraph {
   private connectChain(): void {
     this.disconnectAll();
 
-    let node: AudioNode = this.rgGain;
+    let node: AudioNode = this.input;
     for (const insert of this.inserts) {
       node.connect(insert);
       node = insert;

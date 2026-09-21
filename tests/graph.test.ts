@@ -12,24 +12,19 @@ function setup() {
 const asMock = (node: unknown): MockGainNode => node as unknown as MockGainNode;
 
 describe("EkoGraph", () => {
-  it("creates gains in the order rgGain, fadeGain, userGain", () => {
+  it("creates gains in the order input, fadeGain, userGain", () => {
     const { ctx, graph } = setup();
     expect(ctx.gains.length).toBe(3);
-    expect(ctx.gains[0]).toBe(graph.rgGain as unknown as MockGainNode);
+    expect(ctx.gains[0]).toBe(graph.input as unknown as MockGainNode);
     expect(ctx.gains[1]).toBe(graph.fadeGain as unknown as MockGainNode);
     expect(ctx.gains[2]).toBe(graph.userGain as unknown as MockGainNode);
   });
 
-  it("wires rgGain to fadeGain to userGain to destination by default", () => {
+  it("wires input to fadeGain to userGain to destination by default", () => {
     const { ctx, graph } = setup();
-    expect(asMock(graph.rgGain).connections).toEqual([graph.fadeGain]);
+    expect(asMock(graph.input).connections).toEqual([graph.fadeGain]);
     expect(asMock(graph.fadeGain).connections).toEqual([graph.userGain]);
     expect(asMock(graph.userGain).connections).toEqual([ctx.destination]);
-  });
-
-  it("exposes rgGain as the input sources connect into", () => {
-    const { graph } = setup();
-    expect(graph.input).toBe(graph.rgGain);
   });
 
   it("does not create an analyser until one is asked for", () => {
@@ -49,13 +44,13 @@ describe("EkoGraph", () => {
     expect(asMock(analyser).connections).toEqual([ctx.destination]);
   });
 
-  it("splices user inserts between rgGain and fadeGain, in order", () => {
+  it("splices user inserts between input and fadeGain, in order", () => {
     const { graph } = setup();
     const a = new MockGainNode();
     const b = new MockGainNode();
     graph.setInserts([a as unknown as AudioNode, b as unknown as AudioNode]);
 
-    expect(asMock(graph.rgGain).connections).toEqual([a]);
+    expect(asMock(graph.input).connections).toEqual([a]);
     expect(a.connections).toEqual([b]);
     expect(b.connections).toEqual([graph.fadeGain]);
     expect(asMock(graph.fadeGain).connections).toEqual([graph.userGain]);
@@ -67,7 +62,7 @@ describe("EkoGraph", () => {
     graph.setInserts([a as unknown as AudioNode]);
     graph.setInserts([]);
 
-    expect(asMock(graph.rgGain).connections).toEqual([graph.fadeGain]);
+    expect(asMock(graph.input).connections).toEqual([graph.fadeGain]);
     expect(a.connections).toEqual([]);
   });
 
@@ -79,23 +74,23 @@ describe("EkoGraph", () => {
     expect(asMock(analyser).connections).toEqual([ctx.destination]);
   });
 
-  it("keeps a connected source wired to rgGain across a setInserts rebuild", () => {
+  it("keeps a connected source wired to input across a setInserts rebuild", () => {
     const { graph } = setup();
     const source = new MockGainNode();
     source.connect(graph.input);
 
     graph.setInserts([new MockGainNode() as unknown as AudioNode]);
 
-    expect(source.connections).toEqual([graph.rgGain]);
+    expect(source.connections).toEqual([graph.input]);
   });
 
-  it("keeps a connected source wired to rgGain across the first analyser access", () => {
+  it("keeps a connected source wired to input across the first analyser access", () => {
     const { graph } = setup();
     const source = new MockGainNode();
     source.connect(graph.input);
 
     void graph.analyser;
 
-    expect(source.connections).toEqual([graph.rgGain]);
+    expect(source.connections).toEqual([graph.input]);
   });
 });

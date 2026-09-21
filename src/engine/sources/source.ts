@@ -30,6 +30,11 @@ export interface LoadedSource {
   readonly normGain: number;
   /** Whether this source can be scheduled to a sample boundary. */
   readonly canGapless: boolean;
+  /**
+   * This source's own level, carrying its normalization gain and any fade envelope.
+   * Null until `connect()` has been called.
+   */
+  readonly gain: GainNode | null;
   /** Set the node this source plays into. Call before `start()`. */
   connect(destination: AudioNode): void;
   /**

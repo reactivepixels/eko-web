@@ -34,10 +34,10 @@ const DEFAULTS = {
 
 /**
  * Web Audio playback engine: each track plays through a selectable source strategy
- * (decode to buffer, or stream via a media element) into a gain graph
- * (`rgGain → fadeGain → userGain → destination`) with ReplayGain-style loudness
- * normalization. Gapless (sample-accurate) transitions only happen between buffered
- * tracks; see `source` and `bufferMaxBytes` in `EkoWebEngineOptions`.
+ * (decode to buffer, or stream via a media element), through its own ReplayGain-style
+ * normalization gain, into a shared graph (`input → fadeGain → userGain → destination`).
+ * Gapless (sample-accurate) transitions only happen between buffered tracks; see `source`
+ * and `bufferMaxBytes` in `EkoWebEngineOptions`.
  *
  * NOT bit-perfect. See the project README.
  */
@@ -666,8 +666,8 @@ export class EkoWebEngine {
     next.connect(this.graph!.input);
     next.onEnded(() => this.handleSourceEnded());
     next.start(endCtxTime, 0);
-    // Jump the shared normalization gain to the next track's value exactly at the boundary.
-    this.graph!.rgGain.gain.setValueAtTime(next.normGain, endCtxTime);
+    // No boundary-jump scheduling needed: `next` already carries its own normalization
+    // gain from connect(), so the level changes over at exactly the boundary for free.
     this.armed = { loaded: next, index: nextIndex, startCtxTime: endCtxTime };
   }
 
@@ -779,10 +779,6 @@ export class EkoWebEngine {
       this.armed.loaded.dispose();
       this.armed = null;
     }
-    if (this.ctx && this.graph) {
-      this.graph.rgGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      if (this.current) this.graph.rgGain.gain.value = this.current.normGain;
-    }
   }
 
   private handleNaturalEnd(): void {
@@ -828,7 +824,6 @@ export class EkoWebEngine {
     const ctx = this.ctx!;
     const current = this.current!;
     const at = when ?? ctx.currentTime;
-    this.graph!.rgGain.gain.value = current.normGain;
     current.start(at, offset);
     this.startCtxTime = at;
     this.startOffset = offset;

@@ -69,6 +69,7 @@ class BufferLoadedSource implements LoadedSource {
 
   private node: AudioBufferSourceNode | null = null;
   private destination: AudioNode | null = null;
+  private gainNode: GainNode | null = null;
   private endedFn: (() => void) | null = null;
   private disposed = false;
 
@@ -89,7 +90,15 @@ class BufferLoadedSource implements LoadedSource {
   }
 
   connect(destination: AudioNode): void {
-    this.destination = destination;
+    const gain = this.ctx.createGain();
+    gain.gain.value = this.normGain;
+    gain.connect(destination);
+    this.gainNode = gain;
+    this.destination = gain;
+  }
+
+  get gain(): GainNode | null {
+    return this.gainNode;
   }
 
   start(when: number, offset: number): void {
@@ -139,5 +148,7 @@ class BufferLoadedSource implements LoadedSource {
     this.stop();
     this.endedFn = null;
     this.destination = null;
+    this.gainNode?.disconnect();
+    this.gainNode = null;
   }
 }

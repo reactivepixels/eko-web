@@ -79,7 +79,7 @@ describe("BufferSourceStrategy", () => {
     expect(ctx.sources[1]!.startOffset).toBeCloseTo(0.25, 6);
   });
 
-  it("connects every fresh node to the destination given to connect()", async () => {
+  it("connects every fresh node to its own gain, which feeds the destination given to connect()", async () => {
     restore = stubFetch();
     const ctx = ctxWith();
     const loaded = await new BufferSourceStrategy().load(
@@ -89,13 +89,16 @@ describe("BufferSourceStrategy", () => {
     );
     const destination = new MockGainNode();
     loaded.connect(destination as unknown as AudioNode);
+    // connect() creates the source's own gain and wires it to the given destination;
+    // every fresh playback node then connects into that gain, not straight to destination.
+    expect((loaded.gain as unknown as MockGainNode).connections).toEqual([destination]);
 
     loaded.start(0, 0);
-    expect(ctx.sources[0]!.connections).toEqual([destination]);
+    expect(ctx.sources[0]!.connections).toEqual([loaded.gain]);
 
     loaded.stop();
     loaded.start(0, 0);
-    expect(ctx.sources[1]!.connections).toEqual([destination]);
+    expect(ctx.sources[1]!.connections).toEqual([loaded.gain]);
   });
 
   it("reports a natural end but stays quiet when we stopped it ourselves", async () => {
