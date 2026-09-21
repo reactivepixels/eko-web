@@ -95,6 +95,33 @@ describe("gapless", () => {
     expect(ctx.sources[1]!.stopped).toBe(true);
   });
 
+  it("a cleared armed source firing a late ended event does not advance the track", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup(2);
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    const ended = vi.fn();
+    const changed = vi.fn();
+    engine.on("ended", ended);
+    engine.on("trackchange", changed);
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(2);
+
+    engine.pause(); // stops and disposes the armed source
+    expect(ctx.sources[1]!.stopped).toBe(true);
+
+    // The browser can still fire the node's natural 'ended' event after it was already
+    // stopped and disposed. That must not be mistaken for the track reaching its end.
+    ctx.sources[1]!.fireEnded();
+
+    expect(ended).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    expect(engine.currentIndex).toBe(0);
+    expect(engine.state).toBe("paused");
+  });
+
   it("chains A → B → C", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup(3);

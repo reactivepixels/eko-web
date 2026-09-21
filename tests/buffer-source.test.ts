@@ -79,6 +79,25 @@ describe("BufferSourceStrategy", () => {
     expect(ctx.sources[1]!.startOffset).toBeCloseTo(0.25, 6);
   });
 
+  it("connects every fresh node to the destination given to connect()", async () => {
+    restore = stubFetch();
+    const ctx = ctxWith();
+    const loaded = await new BufferSourceStrategy().load(
+      { src: "/a.flac" },
+      ctx as unknown as AudioContext,
+      OPTS,
+    );
+    const destination = new MockGainNode();
+    loaded.connect(destination as unknown as AudioNode);
+
+    loaded.start(0, 0);
+    expect(ctx.sources[0]!.connections).toEqual([destination]);
+
+    loaded.stop();
+    loaded.start(0, 0);
+    expect(ctx.sources[1]!.connections).toEqual([destination]);
+  });
+
   it("reports a natural end but stays quiet when we stopped it ourselves", async () => {
     restore = stubFetch();
     const ctx = ctxWith();

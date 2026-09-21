@@ -57,8 +57,14 @@ export class MockBufferSource {
   startWhen = 0;
   startOffset = 0;
   stopWhen: number | null = null;
-  connect(): void {}
-  disconnect(): void {}
+  /** Everything this node is currently connected to, in connect order. */
+  connections: unknown[] = [];
+  connect(destination?: unknown): void {
+    this.connections.push(destination);
+  }
+  disconnect(): void {
+    this.connections = [];
+  }
   start(when = 0, offset = 0): void {
     this.started = true;
     this.startWhen = when;
