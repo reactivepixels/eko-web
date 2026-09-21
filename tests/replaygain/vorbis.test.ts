@@ -43,8 +43,25 @@ describe("vorbis comments", () => {
     expect(parseVorbisComments(load("tone.flac"))).toEqual({ gainDb: -6.5, peak: 0.988525 });
   });
 
-  it("reads gain and peak from a real Ogg", () => {
-    expect(parseVorbisComments(load("tone.ogg"))).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  /**
+   * Two real Ogg files, because the comment block is reached by a different route in each.
+   * Ogg Vorbis carries it in a packet that starts with the byte 0x03 followed by "vorbis";
+   * Ogg FLAC carries a FLAC metadata block inside the Ogg framing instead, with no such
+   * signature. A parser that only handles one of them passes half of what people will
+   * actually hand it, and both of these are files ffmpeg produces by default for .ogg.
+   */
+  it("reads gain and peak from a real Ogg Vorbis file", () => {
+    expect(parseVorbisComments(load("tone-vorbis.ogg"))).toEqual({
+      gainDb: -6.5,
+      peak: 0.988525,
+    });
+  });
+
+  it("reads gain and peak from a real Ogg FLAC file", () => {
+    expect(parseVorbisComments(load("tone-oggflac.ogg"))).toEqual({
+      gainDb: -6.5,
+      peak: 0.988525,
+    });
   });
 
   it("returns an empty result rather than throwing on bytes that are not a container", () => {
