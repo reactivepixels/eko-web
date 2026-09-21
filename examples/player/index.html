@@ -56,10 +56,14 @@
       play and listen at the seam. Untick gapless to hear the gap appear.
     </p>
     <p class="hint" id="hint">
-      Play is disabled until audio is loaded. The test tone is a continuous 440 Hz sine of exactly
-      880 cycles, so its loop point is phase continuous: with gapless on you should hear one
-      unbroken tone, and with it off a click every two seconds. Any click you hear with gapless on
-      is the engine, not the file.
+      Play is disabled until audio is loaded. <b>source</b> forces the playback strategy:
+      <b>buffer</b> decodes the whole file and is the only path that can be gapless, while
+      <b>element</b> streams and never is, so on element you should hear a seam even with gapless
+      ticked. On <b>auto</b> a local file always takes the buffer path, because the size probe
+      cannot read a blob URL. The test tone is a continuous 440 Hz sine of exactly 880 cycles, so
+      its loop point is phase continuous: with gapless on you should hear one unbroken tone, and
+      with it off a click every two seconds. Any click you hear with gapless on is the engine, not
+      the file.
     </p>
 
     <div class="row">
@@ -67,6 +71,14 @@
       <button id="tone">Use a test tone</button>
       <button id="play" disabled>Play</button>
       <label><input type="checkbox" id="gapless" checked /> gapless</label>
+      <label>
+        source
+        <select id="source-mode">
+          <option value="auto">auto</option>
+          <option value="buffer">buffer</option>
+          <option value="element">element (streaming)</option>
+        </select>
+      </label>
       <label><input type="checkbox" id="eq" /> +6 dB shelf at 4 kHz (proves inserts)</label>
     </div>
 
@@ -132,6 +144,7 @@
         engine = new EkoWebEngine({
           normalize: true,
           transition: $("gapless").checked ? "gapless" : "gap",
+          source: $("source-mode").value,
         });
         wire();
         if (currentFile) loadFile(currentFile);
@@ -231,6 +244,8 @@
       });
 
       $("gapless").addEventListener("change", rebuild);
+
+      $("source-mode").addEventListener("change", rebuild);
 
       $("eq").addEventListener("change", (event) => {
         engine.setInserts(event.target.checked ? [shelf] : []);
