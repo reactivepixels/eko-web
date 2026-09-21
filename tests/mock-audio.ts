@@ -23,6 +23,11 @@ export class MockParam {
   }
   linearRampToValueAtTime(value: number, time: number): this {
     this.ramps.push({ value, time });
+    // A real AudioParam's `.value` getter reflects the live, computed automation value,
+    // which settles at a ramp's target once the ramp completes. `rampTo()` reads `.value`
+    // to pin the ramp's own starting point, so this has to track the ramp target too, not
+    // just an explicit `setValueAtTime` call, or that pin silently reads a stale value.
+    this.value = value;
     return this;
   }
   /** Real AudioParams only drop events scheduled at or after `time`; events before it stand. */

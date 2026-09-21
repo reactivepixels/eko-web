@@ -310,11 +310,8 @@ export class EkoWebEngine {
       if (this.advancing) this.pauseRequestedDuringAdvance = true;
       return;
     }
-    const ctx = this.ctx!;
     const position = this.currentTime; // capture before the source stops
-    // Ramp down, then stop on the ramp's last sample so the cut is silent.
-    const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
-    this.stopSource(rampEnd);
+    this.fadeOutAndStop();
     this.clearArmed();
     this.startOffset = position;
     this._paused = true;
@@ -329,11 +326,9 @@ export class EkoWebEngine {
     if (this._paused) {
       this.startOffset = t;
     } else {
-      const ctx = this.ctx!;
       // Ramp out, cut at the ramp end, and start the new position there. startSource
       // fades back in from silence, so the seek is inaudible in both directions.
-      const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
-      this.stopSource(rampEnd);
+      const rampEnd = this.fadeOutAndStop();
       this.clearArmed();
       this.startSource(t, rampEnd);
       void this.armNext(); // re-arm from the new position
@@ -369,9 +364,7 @@ export class EkoWebEngine {
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
       // a manual skip is still an abrupt stop for the current track, so it must not click.
-      const ctx = this.ctx!;
-      const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
-      this.stopSource(rampEnd);
+      this.fadeOutAndStop();
     } else {
       this.stopSource();
     }
@@ -590,13 +583,32 @@ export class EkoWebEngine {
 
     // Fade in from silence so starting mid-waveform does not click.
     const fade = this.graph!.fadeGain.gain;
-    fade.cancelScheduledValues(at);
-    fade.setValueAtTime(0, at);
+    if (when === undefined) {
+      // A standalone start (e.g. resuming from a stop): nothing is scheduled at `at`, so
+      // pin the value there before ramping up.
+      fade.cancelScheduledValues(at);
+      fade.setValueAtTime(0, at);
+    }
+    // When `when` IS given, `at` is the exact end time of a fade-out `fadeOutAndStop()`
+    // just scheduled on this same call chain (see seek()), which already lands the gain
+    // at 0 at `at`. Cancelling here would delete that ramp's own landing event: the
+    // automation would fall back to holding whatever value preceded it (near full) right
+    // up to the cut, instead of having actually ramped down, producing exactly the click
+    // fades exist to prevent. Leaving it alone means the ramp-up below just continues
+    // from where the ramp-out left off.
     fade.linearRampToValueAtTime(1, at + this.fadeSeconds);
   }
 
   private stopSource(when?: number): void {
     this.current?.stop(when);
+  }
+
+  /** Ramp fadeGain to silence and stop the current source at the ramp's end. */
+  private fadeOutAndStop(): number {
+    const ctx = this.ctx!;
+    const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
+    this.stopSource(rampEnd);
+    return rampEnd;
   }
 
   /** Stop both the current and armed sources (used by pause/seek/skip/destroy). */

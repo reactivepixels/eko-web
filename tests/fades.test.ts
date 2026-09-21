@@ -107,6 +107,27 @@ describe("engine fades", () => {
     expect(fresh.startOffset).toBeCloseTo(0.3, 6);
   });
 
+  it("does not click across a seek: the fade-out actually reaches (near) zero at the cut", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+
+    ctx.currentTime = 0.1;
+    const rampEnd = 0.1 + DEFAULT_FADE_SECONDS;
+    engine.seek(0.3);
+
+    const fadeGain = ctx.gains[1]!; // rg, fade, user
+    // Sample just before the cut: if seek's own restart cancelled the fade-out's landing
+    // ramp (the bug), the gain never actually ramped down and this reads back near 1 (a
+    // click at the cut). A real fade reads back near 0 here.
+    expect(fadeGain.gain.valueAt(rampEnd - 0.0005)).toBeLessThan(0.2);
+  });
+
   it("fades out on a manual skip while playing, instead of cutting abruptly", async () => {
     restore = stubFetch();
     const ctx = new MockAudioContext();
