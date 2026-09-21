@@ -493,21 +493,17 @@ describe("other transport calls during a gap-advance", () => {
   // `current` assignment: the load resolves at track B, and if the guard only ran in
   // advanceWithGap afterward, loadIndex would have already made track B `current`,
   // published it, and disposed track A's real, still-current source, all before
-  // advanceWithGap ever got a chance to notice. The three tests below each check a
-  // different consequence of that same rejected load, sharing one setup that drives it.
+  // advanceWithGap ever got a chance to notice.
+  //
+  // Rejecting the stale load is not the end of it, though: the listener who flipped
+  // shuffle or repeat mid-load asked for the new answer, not for playback to stop dead at
+  // the old boundary. advanceWithGap() retries once against whatever plays next now, and
+  // only gives up (settling the same way the queue naturally ending does) if that retry
+  // disagrees again too, so a caller that keeps changing the setting cannot turn this into
+  // an unbounded chain of fetches.
 
-  /**
-   * Holds a gap-advance's own fetch for track B open, flips repeat to "one" while it is
-   * in flight (which changes what plays next without bumping advanceToken, the same
-   * disagreement the stillValid check in loadIndex() exists to catch), then releases it
-   * and lets everything settle.
-   */
-  async function setupStaleGapAdvance(): Promise<{
-    ctx: MockAudioContext;
-    engine: EkoWebEngine;
-    tracks: { id: string; src: string; source: "buffer" }[];
-    changed: ReturnType<typeof vi.fn>;
-  }> {
+  it("retries against the new target instead of stopping at the old boundary, and never commits to the stale one", async () => {
+    restore = stubFetch();
     const ctx = new MockAudioContext();
     ctx.nextBuffer = makeToneBuffer(0.5);
     const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext, transition: "gap" });
@@ -544,62 +540,169 @@ describe("other transport calls during a gap-advance", () => {
     await ready;
     await engine.play();
     await flush();
-    expect(ctx.sources.length).toBe(1);
 
     const changed = vi.fn();
     engine.on("trackchange", changed);
 
-    // Track A ends: the advance starts loading track B (fetch call #2, held open). While
-    // it is in flight, flip repeat to "one". peekNextIndex() now answers with the current
-    // index (still track A, 0) instead of the target (1) the advance captured.
+    // Track A ends: the advance starts loading track B (fetch #2, held open). While it is
+    // in flight, flip repeat to "one": peekNextIndex() now answers 0 (loop back to A)
+    // instead of the 1 the advance captured.
     ctx.sources[0]!.fireEnded();
     engine.setRepeat("one");
 
-    // Give the held-open fetch call a tick to actually start before releasing it.
     await flush();
-    gate.release?.();
+    gate.release?.(); // track B's load resolves, is rejected, and the retry (for track A) begins
+    await flush();
+    await flush();
     await flush();
     await flush();
     await flush();
 
-    return { ctx, engine, tracks, changed };
-  }
-
-  it("a repeat change during an in-flight gap-advance does not commit to the stale target", async () => {
-    const { engine, tracks, changed } = await setupStaleGapAdvance();
-
-    // The advance must not commit to the stale target: no trackchange reporting it, and
-    // the boundary is never recorded as a gap.
-    expect(changed).not.toHaveBeenCalled();
-    expect(engine.lastTransition).toBeNull();
+    // Exactly one boundary is ever reported, and it is the new answer (a legitimate
+    // repeat-one loop back to track A), never the stale one (track B).
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledWith({ index: 0, track: tracks[0], transition: "gap" });
     expect(engine.currentIndex).toBe(0);
-    // The rejected load must never have been assigned as `current` either: the snapshot's
-    // `track` has to keep agreeing with `index`, or a consumer reads track B's metadata
-    // against an index that still says track A.
-    expect(engine.getSnapshot().track).toEqual(tracks[0]);
-    expect(engine.getSnapshot().index).toBe(0);
+    expect(engine.lastTransition).toBe("gap");
+    // Playback actually resumes: what the listener asked for by changing the setting, not
+    // a stall.
+    expect(engine.state).toBe("playing");
+    expect(engine.paused).toBe(false);
   });
 
-  it("does not dispose the still-current track, and never builds a node for the rejected load", async () => {
-    const { ctx } = await setupStaleGapAdvance();
+  it("leaves the still-current track alone while a rejected load's retry is settling", async () => {
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext, transition: "gap" });
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
 
-    // Track A's own source, which was never actually superseded, must not have been torn
-    // down as a side effect of a load that got rejected: exactly one source exists
-    // throughout (track A's), and it was never stopped.
+    let fetchCount = 0;
+    const gates: Array<() => void> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCount++;
+      const response = {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+      if (fetchCount === 2 || fetchCount === 3) {
+        // Hold both the advance's own load (call #2, track B) and its retry (call #3,
+        // track A again under repeat "one") open, so the window right after the first is
+        // rejected but before the retry lands can be inspected.
+        await new Promise<void>((resolve) => {
+          gates.push(resolve);
+        });
+      }
+      return response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
     expect(ctx.sources.length).toBe(1);
+
+    ctx.sources[0]!.fireEnded();
+    engine.setRepeat("one");
+
+    await flush();
+    gates[0]?.(); // release fetch #2 (track B): rejected, retry issues fetch #3
+    await flush();
+    await flush();
+
+    // The rejected load must not have disposed the real, still-current track (track A),
+    // and no node was ever built for it either: node creation is always deferred to
+    // .start(), so `sources[0]` (track A's own, untouched) staying unstopped is the
+    // assertion that actually matters here, not the source count on its own.
     expect(ctx.sources[0]!.stopped).toBe(false);
+
+    gates[1]?.(); // let the retry settle too, so nothing is left open for afterEach
+    await flush();
+    await flush();
+    await flush();
   });
 
-  it("does not start the stale track on a subsequent play()", async () => {
-    const { ctx, engine } = await setupStaleGapAdvance();
+  it("gives up after one retry rather than spinning, and a later play() resumes the real current track, not a phantom", async () => {
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext, transition: "gap" });
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
 
-    // A consumer reacting to `paused` (still true here) taps play. If the rejected load
-    // had been left as `current`, this would start it: a fresh source would be built and
-    // started for a track the queue never actually reached.
+    let fetchCount = 0;
+    const gates: Array<() => void> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCount++;
+      const response = {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+      if (fetchCount === 2 || fetchCount === 3) {
+        await new Promise<void>((resolve) => {
+          gates.push(resolve);
+        });
+      }
+      return response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    const changed = vi.fn();
+    engine.on("trackchange", changed);
+
+    // Track A ends: advance targets track B (fetch #2, held). Flip repeat to "one": the
+    // new target is track A itself (0).
+    ctx.sources[0]!.fireEnded();
+    engine.setRepeat("one");
+    await flush();
+    gates[0]?.(); // release fetch #2: rejected, retries against target 0 (fetch #3)
+    await flush();
+    await flush();
+
+    // Flip repeat back to "none" while the retry (fetch #3, for track A) is itself in
+    // flight: the target disagrees again, this time with no retries left.
+    engine.setRepeat("none");
+    await flush();
+    gates[1]?.(); // release fetch #3: rejected too, retries exhausted
+    await flush();
+    await flush();
+    await flush();
+
+    // No boundary was ever committed: the engine settles the same way the queue naturally
+    // ending does, rather than sticking mid-load or spinning for a third attempt.
+    expect(changed).not.toHaveBeenCalled();
+    expect(engine.state).toBe("ended");
+    expect(engine.paused).toBe(true);
+    expect(ctx.sources.length).toBe(1); // neither rejected load ever built a node
+
+    // A later play() must reach the real `current` (track A's original source), not a
+    // phantom left over from either rejected load, and must not be a silent no-op either
+    // (which is exactly how the earlier, unfixed version of this rejection looked: stuck
+    // in `loading`, so play() never got far enough to touch `current` at all).
     void engine.play();
     await flush();
-
-    expect(ctx.sources.length).toBe(1);
+    expect(ctx.sources.length).toBe(2);
   });
 });
 
@@ -655,6 +758,54 @@ describe("shuffle and repeat re-arm", () => {
 
     expect(armed.stopped).toBe(false);
     expect(ctx.sources.length).toBe(2);
+  });
+
+  it("tears down an already-armed track and arms a fresh one when shuffle itself produces a genuine change", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    // Three tracks, not two: with only two, shuffling has a single other index to draw,
+    // the same one sequential order would already pick, so it can never be a genuine
+    // peekNextIndex() change on its own (confirmed separately by reading refillBag()).
+    const tracks = [
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+      { id: "c", src: "/c.flac" },
+    ];
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    expect(ctx.sources.length).toBe(2);
+    const armedBefore = ctx.sources[1]!;
+    expect(armedBefore.stopped).toBe(false);
+
+    // Seed EkoQueue's own Fisher-Yates draw deterministically, at the test level only (no
+    // change to EkoQueue itself): refillBag() excludes the current index (0), leaving the
+    // pool [1, 2]. Math.random() always returning 0 makes its single swap put index 2
+    // first, so shuffling changes peekNextIndex() from 1 (sequential) to 2, a genuine
+    // change, not a coincidence of only having one other track to draw.
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+    try {
+      engine.setShuffle(true);
+    } finally {
+      Math.random = originalRandom;
+    }
+
+    expect(engine.currentIndex).toBe(0); // shuffle does not move the queue's own position
+
+    // The stale armed source is torn down synchronously with the setter.
+    expect(armedBefore.stopped).toBe(true);
+
+    await flush();
+
+    // A fresh source was armed in its place.
+    expect(ctx.sources.length).toBe(3);
+    expect(ctx.sources[2]!.stopped).toBe(false);
   });
 });
 

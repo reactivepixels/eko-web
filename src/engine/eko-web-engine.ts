@@ -283,6 +283,14 @@ export class EkoWebEngine {
    * not bump `advanceToken` (a shuffle or repeat toggle mid-load). Only `advanceWithGap()`
    * passes one; `skipTo()` and `startLoad()` have already moved the queue to `index` before
    * calling this, so `token` alone is enough for them.
+   *
+   * The two rejections below look similar but leave different obligations. A `token`
+   * mismatch means another call (setQueue()/skipTo()/destroy()) already owns the engine
+   * and is issuing its own loadIndex() that will reset `loading`/state itself, so this one
+   * leaves them alone. A `stillValid` failure has no such successor: nothing else is
+   * coming to clean up, so this call must leave the engine coherent by itself, or `loading`
+   * stays true and `play()`/`pause()` go silently dead until some unrelated call happens to
+   * bump the token later.
    */
   private async loadIndex(
     index: number,
@@ -295,14 +303,18 @@ export class EkoWebEngine {
     this.emitter.emit("loadstart", { index });
     try {
       const loaded = await this.loadTrack(track);
-      if (token !== this.advanceToken || (stillValid && !stillValid())) {
-        // The token check catches setQueue()/skipTo()/destroy(). `stillValid`, when the
-        // caller supplies it, catches something that changed what plays next without
-        // bumping the token (a shuffle or repeat toggle): the load has to be thrown away
-        // before it ever touches `current`/state, not just before the caller's own
-        // post-await commit, or a subsequent play() would start the dangling source this
-        // load just built.
+      if (token !== this.advanceToken) {
         loaded.dispose();
+        return;
+      }
+      if (stillValid && !stillValid()) {
+        // `current` was never touched by this call, so it is still a valid, ready track;
+        // restore the bookkeeping this load claimed at the top so the engine is not left
+        // permanently mid-load. What happens next (retry against the new answer, or
+        // settle) is the caller's decision, made below in advanceWithGap().
+        loaded.dispose();
+        this.loading = false;
+        this.setState("ready");
         return;
       }
       loaded.connect(this.graph!.input);
@@ -696,8 +708,18 @@ export class EkoWebEngine {
     }
   }
 
-  /** Load and play the given index from a standing start. The boundary is audibly a gap. */
-  private async advanceWithGap(index: number): Promise<void> {
+  /**
+   * Load and play the given index from a standing start. The boundary is audibly a gap.
+   *
+   * `retriesLeft` bounds what happens when a shuffle or repeat toggle lands mid-load and
+   * changes the answer (see the `stillValid` rejection in loadIndex()): a listener who
+   * just changed the setting is asking for the new answer, not for playback to stop at
+   * the old boundary, so this retries once against whatever plays next now. It is capped
+   * at one retry, not chased indefinitely, so a caller that keeps changing the setting on
+   * every tick cannot turn this into an unbounded chain of fetches; one retry covers the
+   * realistic case (a single toggle landing mid-load) and gives up past that.
+   */
+  private async advanceWithGap(index: number, retriesLeft = 1): Promise<void> {
     this.stopRaf();
     this._paused = true;
     // An advance always intends to resume once it settles (that is the whole point: the
@@ -726,7 +748,19 @@ export class EkoWebEngine {
     // touches `current`, so this repeats the same check purely as defence in depth: it
     // still has to stop advance() and the trackchange below from firing even if a future
     // change to loadIndex() ever loosened that guard.
-    if (this.tracks.peekNextIndex() !== index) {
+    const target = this.tracks.peekNextIndex();
+    if (target !== index) {
+      if (target >= 0 && retriesLeft > 0) {
+        void this.advanceWithGap(target, retriesLeft - 1);
+        return;
+      }
+      // Nothing left to chase: either there is genuinely nothing to advance to (the
+      // toggle left the queue with no next track), or the bound above was hit. Either
+      // way, loadIndex() already left `current` coherent; settle the same way the queue
+      // naturally running out does, rather than leaving `pendingIntent` pointed at a
+      // boundary this call has decided not to reach.
+      this.pendingIntent = null;
+      this.handleNaturalEnd();
       return;
     }
     // Only now, with the load confirmed to still be current, commit the move. The track
