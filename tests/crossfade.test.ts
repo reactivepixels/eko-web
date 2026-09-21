@@ -200,6 +200,152 @@ describe("crossfade", () => {
     expect(outgoing!.gain.valueAt(3)).toBeCloseTo(normGain, 6); // the old ramp's target is gone
   });
 
+  it("restores the outgoing gain when a skip mid-crossfade fails and the same track plays on", async () => {
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5, 3);
+    const engine = new EkoWebEngine({
+      context: ctx as unknown as AudioContext,
+      transition: "crossfade",
+      crossfadeSeconds: 1,
+    });
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
+
+    let fetchOk = true;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      ({
+        ok: fetchOk,
+        status: fetchOk ? 200 : 404,
+        headers: { get: (): string | null => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      }) as unknown as Response) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    const normGain = engine.normGain;
+    await engine.play();
+    await flush(); // arms B, which ramps A's own gain from normGain@2 down to 0@3
+
+    const [outgoing] = sourceGains(ctx);
+    ctx.currentTime = 2.5; // mid-overlap: A is halfway down its ramp
+
+    // The next track has gone unreachable. The skip's own load fails, the queue rolls back,
+    // and the engine resumes the track that never stopped being loaded: A.
+    fetchOk = false;
+    engine.next();
+    await flush();
+
+    expect(engine.state).toBe("playing");
+    expect(engine.currentIndex).toBe(0);
+    // A is audible again, so its own gain has to be back at its steady level. Left alone,
+    // the crossfade ramp is still on the node and A plays out through silence, forever.
+    expect(outgoing!.gain.valueAt(2.5)).toBeCloseTo(normGain, 6);
+    expect(outgoing!.gain.valueAt(4)).toBeCloseTo(normGain, 6);
+  });
+
+  it("restores the outgoing gain when a setQueue mid-crossfade fails to load its own first track", async () => {
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5, 3);
+    const engine = new EkoWebEngine({
+      context: ctx as unknown as AudioContext,
+      transition: "crossfade",
+      crossfadeSeconds: 1,
+    });
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
+
+    let fetchOk = true;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      ({
+        ok: fetchOk,
+        status: fetchOk ? 200 : 404,
+        headers: { get: (): string | null => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      }) as unknown as Response) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    const normGain = engine.normGain;
+    await engine.play();
+    await flush();
+
+    const [outgoing] = sourceGains(ctx);
+    ctx.currentTime = 2.5;
+
+    // A new queue whose own first track cannot be fetched: loadIndex's catch path leaves
+    // `current` exactly where it was, so A is still the loaded, restartable track.
+    fetchOk = false;
+    engine.setQueue([{ id: "c", src: "/c.flac", source: "buffer" as const }]);
+    await flush();
+
+    expect(engine.state).toBe("error");
+    expect(outgoing!.gain.valueAt(2.5)).toBeCloseTo(normGain, 6);
+    expect(outgoing!.gain.valueAt(4)).toBeCloseTo(normGain, 6);
+  });
+
+  it("stops an armed source on the pause fade's last sample rather than cutting it mid-overlap", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup(3, { transition: "crossfade", crossfadeSeconds: 1 });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    const armedSource = ctx.sources[1]!;
+    const armedGain = sourceGains(ctx)[1]!;
+    ctx.currentTime = 2.5; // mid-overlap: the armed track is already audible
+    engine.pause();
+
+    // The shared fade only reaches silence at 2.51, so cutting the armed node now is the
+    // raw discontinuity the fade was scheduled to cover.
+    expect(armedSource.stopWhen).toBeCloseTo(2.51, 6);
+    // Its own gain has to stay wired up until then too: disconnecting it is the same cut.
+    expect(armedGain.connections.length).toBeGreaterThan(0);
+  });
+
+  it("lets the outgoing gain keep fading through a pause fade instead of stepping back to full", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup(3, {
+      transition: "crossfade",
+      crossfadeSeconds: 1,
+      // Long enough that the pause fade outlives the crossfade ramp, which is what makes
+      // the pin's timing audible at all.
+      fadeSeconds: 0.5,
+    });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    const normGain = engine.normGain;
+    await engine.play();
+    await flush(); // arms B: A's gain ramps normGain@2 down to 0@3
+
+    const [outgoing] = sourceGains(ctx);
+    ctx.currentTime = 2.9;
+    engine.pause(); // the pause fade runs 2.9 to 3.4, so 3.0 falls inside it
+
+    // A tenth of A's level is left at 2.95 and the listener can still hear it, so pinning
+    // there would step it back to full in the middle of the fade.
+    expect(outgoing!.gain.valueAt(2.95)).toBeCloseTo(normGain * 0.05, 6);
+    expect(outgoing!.gain.valueAt(3)).toBeCloseTo(0, 6);
+    // Only once the fade has finished, and the source with it, does the pin land.
+    expect(outgoing!.gain.valueAt(3.4)).toBeCloseTo(normGain, 6);
+  });
+
   it("seeking mid-crossfade leaves the outgoing gain at its own normGain after the restart", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup(3, { transition: "crossfade", crossfadeSeconds: 1 });

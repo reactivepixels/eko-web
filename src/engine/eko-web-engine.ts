@@ -98,6 +98,13 @@ export class EkoWebEngine {
   // state or emits events for a track the engine has already moved past.
   private advanceToken = 0;
   private rafHandle: number | null = null;
+  // Sources that were stopped on the last sample of a fade already in flight, held here
+  // until that sample has actually passed. Tearing one down disconnects its own gain node,
+  // which silences it instantly, so doing it at the moment of the stop call would cut
+  // exactly the tail the fade was scheduled to cover. Tracked rather than fired and
+  // forgotten so destroy() can settle them instead of leaving handles pointed at a context
+  // that is closing.
+  private deferredDisposals = new Map<ReturnType<typeof setTimeout>, LoadedSource>();
 
   constructor(options: EkoWebEngineOptions = {}) {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
@@ -235,17 +242,18 @@ export class EkoWebEngine {
     // this new queue owns now.
     this.advanceToken++;
     const token = this.advanceToken;
+    let rampEnd: number | undefined;
     if (!this._paused && this.current) {
       // A track is actively playing and setQueue() (or load(), or the facade's `src`
       // setter, which both funnel through here) is about to cut it out from under the
       // listener. Fade it out the same shape pause/seek/skip already use, instead of a
       // hard cut. destroy() below uses the plain teardown() instead: the context is
       // closing there, so a scheduled fade has nobody left to reach.
-      this.fadeOutAndStop();
+      rampEnd = this.fadeOutAndStop();
     } else {
       this.stopSource();
     }
-    this.clearArmed();
+    this.clearArmed(rampEnd);
     this.stopRaf();
     this.tracks.setTracks(tracks);
     this._paused = true;
@@ -420,9 +428,8 @@ export class EkoWebEngine {
     }
     if (this._paused) return; // genuinely idle already; nothing audible to fade
     const position = this.currentTime; // capture before the source stops
-    this.fadeOutAndStop();
-    this.clearArmed();
-    this.pinCurrentGain();
+    const rampEnd = this.fadeOutAndStop();
+    this.clearArmed(rampEnd);
     this.startOffset = position;
     this._paused = true;
     this.setState("paused");
@@ -440,8 +447,7 @@ export class EkoWebEngine {
       // Ramp out, cut at the ramp end, and start the new position there. startSource
       // fades back in from silence, so the seek is inaudible in both directions.
       const rampEnd = this.fadeOutAndStop();
-      this.clearArmed();
-      this.pinCurrentGain();
+      this.clearArmed(rampEnd);
       this.startSource(t, rampEnd);
       void this.armNext(); // re-arm from the new position
     }
@@ -516,14 +522,15 @@ export class EkoWebEngine {
     // superseded is no longer "in flight" from here on, whether or not that load's own
     // await has settled yet.
     this.pendingIntent = wasPlaying ? "play" : null;
+    let rampEnd: number | undefined;
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
       // a manual skip is still an abrupt stop for the current track, so it must not click.
-      this.fadeOutAndStop();
+      rampEnd = this.fadeOutAndStop();
     } else {
       this.stopSource();
     }
-    this.clearArmed();
+    this.clearArmed(rampEnd);
     this._paused = true;
     this.stopRaf();
     // next()/previous() already moved the queue to `index` before calling this, so the
@@ -604,6 +611,13 @@ export class EkoWebEngine {
     // Invalidate any in-flight load so it cannot resurrect a context or state after this.
     this.advanceToken++;
     this.teardown();
+    // Nothing is left to fade into, so anything waiting on a fade's last sample is torn
+    // down now rather than against a context that is about to close.
+    for (const [handle, source] of this.deferredDisposals) {
+      clearTimeout(handle);
+      source.dispose();
+    }
+    this.deferredDisposals.clear();
     this.current?.dispose();
     this.current = null;
     this.tracks.setTracks([]);
@@ -814,11 +828,44 @@ export class EkoWebEngine {
     this.resolvePendingIntent();
   }
 
-  private clearArmed(): void {
-    if (this.armed) {
-      this.armed.loaded.dispose();
-      this.armed = null;
+  /**
+   * Drop whatever is armed and undo the outgoing half of the boundary it set up.
+   *
+   * armNext() schedules a real ramp on the CURRENT source's own gain as the outgoing side
+   * of a crossfade, and that automation lives on the AudioParam, not on the armed track,
+   * so disposing the armed track alone leaves the outgoing side ramping to (and then held
+   * at) silence with nothing left to hand over to. Pinning here rather than at each call
+   * site is what makes that impossible to forget: skipTo() and setQueue() both keep
+   * `this.current` when their own load fails, and would otherwise resume a track whose
+   * gain is pinned at 0 while reporting "playing".
+   *
+   * `when` is the AudioContext time a fade already in flight reaches silence. Callers that
+   * have one pass it, because mid-crossfade the armed source is audible: it is stopped on
+   * the fade's last sample instead of where it stands, and the current gain is pinned
+   * there too, so the outgoing side holds its level through the fade rather than stepping
+   * back to full while it can still be heard. Callers with no fade in flight pass nothing
+   * and get the immediate teardown, which is all gapless ever needed.
+   */
+  private clearArmed(when?: number): void {
+    const armed = this.armed;
+    this.armed = null;
+    if (armed) {
+      if (when === undefined) armed.loaded.dispose();
+      else this.stopAndDisposeAt(armed.loaded, when);
     }
+    this.pinCurrentGain(when);
+  }
+
+  /** Stop `source` at `when` and tear it down only once that time has passed; see the
+   * `deferredDisposals` field for why the teardown cannot happen at the same instant. */
+  private stopAndDisposeAt(source: LoadedSource, when: number): void {
+    source.stop(when);
+    const delayMs = Math.max(0, (when - (this.ctx?.currentTime ?? when)) * 1000);
+    const handle = setTimeout(() => {
+      this.deferredDisposals.delete(handle);
+      source.dispose();
+    }, delayMs);
+    this.deferredDisposals.set(handle, source);
   }
 
   private handleNaturalEnd(): void {
@@ -908,11 +955,15 @@ export class EkoWebEngine {
    * ramp left the node at, partway down or pinned at silence, instead of the track's own
    * level. This is unrelated to fadeGain's own click-removal ramp on the shared node,
    * which startSource() still handles on its own.
+   *
+   * `when` defers the pin to the end of a fade already in flight, so the level the
+   * listener is still hearing is not stepped back up underneath that fade; see
+   * clearArmed(), which is the only caller that has one.
    */
-  private pinCurrentGain(): void {
+  private pinCurrentGain(when?: number): void {
     const gain = this.current?.gain;
     if (!gain || !this.ctx) return;
-    const at = this.ctx.currentTime;
+    const at = when ?? this.ctx.currentTime;
     gain.gain.cancelScheduledValues(at);
     gain.gain.setValueAtTime(this.current!.normGain, at);
   }
