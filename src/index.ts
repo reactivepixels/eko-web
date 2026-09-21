@@ -8,6 +8,8 @@ export type {
   TransitionKind,
 } from "./types";
 
+export type { EkoSnapshot } from "./engine/snapshot";
+
 // Loudness utilities are part of the public surface — useful for offline analysis or
 // precomputing ReplayGain-style track gains.
 export {

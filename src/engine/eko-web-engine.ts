@@ -5,6 +5,7 @@ import { trackEndTime } from "./scheduling";
 import { rampTo, DEFAULT_FADE_SECONDS } from "./fades";
 import { selectStrategy } from "./sources/select";
 import type { LoadedSource } from "./sources/source";
+import { EMPTY_SNAPSHOT, snapshotsEqual, type EkoSnapshot } from "./snapshot";
 import type {
   EkoTrack,
   EkoState,
@@ -64,6 +65,9 @@ export class EkoWebEngine {
   private _muted = false;
   private _paused = true;
 
+  private subscribers = new Set<() => void>();
+  private snapshot: EkoSnapshot = EMPTY_SNAPSHOT;
+
   // Playback clock: the active source started at ctx time `startCtxTime`, from buffer
   // offset `startOffset` (seconds).
   private startCtxTime = 0;
@@ -101,6 +105,41 @@ export class EkoWebEngine {
   }
   off<E extends EkoEventName>(event: E, fn: EkoEventListener<E>): void {
     this.emitter.off(event, fn);
+  }
+
+  // ── Subscription contract (what framework bindings sit on) ──────────────────
+  /**
+   * Subscribe to discrete state changes. Returns an unsubscribe function.
+   * Time updates are NOT discrete changes; read `currentTime` for those.
+   */
+  subscribe(fn: () => void): () => void {
+    this.subscribers.add(fn);
+    return () => {
+      this.subscribers.delete(fn);
+    };
+  }
+
+  /** The current discrete state. Referentially stable while nothing changes. */
+  getSnapshot(): EkoSnapshot {
+    return this.snapshot;
+  }
+
+  /** Rebuild the snapshot and notify, but only if something actually changed. */
+  private publish(): void {
+    const next: EkoSnapshot = {
+      state: this._state,
+      paused: this._paused,
+      index: this.index,
+      track: this.current?.track ?? this.queue[this.index] ?? null,
+      duration: this.current?.duration ?? 0,
+      volume: this._volume,
+      muted: this._muted,
+      lastTransition: this._lastTransition,
+      sourceKind: this.current?.kind ?? null,
+    };
+    if (snapshotsEqual(this.snapshot, next)) return;
+    this.snapshot = next;
+    for (const fn of [...this.subscribers]) fn();
   }
 
   // ── Read state ──────────────────────────────────────────────────────────────
@@ -156,6 +195,7 @@ export class EkoWebEngine {
     this.queue = tracks.slice();
     this.index = tracks.length > 0 ? 0 : -1;
     this._paused = true;
+    this.publish();
     if (this.index >= 0) void this.loadIndex(0, this.advanceToken);
   }
 
@@ -191,6 +231,7 @@ export class EkoWebEngine {
       this.emitter.emit("loadedmetadata", { index, duration: loaded.duration });
       this.emitter.emit("durationchange", { duration: loaded.duration });
       this.emitter.emit("canplay", { index });
+      this.publish();
       if (this.playRequested) {
         this.playRequested = false;
         void this.play();
@@ -340,6 +381,7 @@ export class EkoWebEngine {
       return;
     }
     this._lastTransition = "gap";
+    this.publish();
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
     if (wasPlaying) void this.play();
@@ -349,12 +391,14 @@ export class EkoWebEngine {
     this._volume = Math.max(0, Math.min(1, v));
     if (this.graph && !this._muted) this.graph.userGain.gain.value = this._volume;
     this.emitter.emit("volumechange", { volume: this._volume, muted: this._muted });
+    this.publish();
   }
 
   setMuted(muted: boolean): void {
     this._muted = muted;
     if (this.graph) this.graph.userGain.gain.value = muted ? 0 : this._volume;
     this.emitter.emit("volumechange", { volume: this._volume, muted: this._muted });
+    this.publish();
   }
 
   /** The engine's AudioContext, so consumers can build nodes to insert. */
@@ -451,6 +495,7 @@ export class EkoWebEngine {
       this.startCtxTime = armed.startCtxTime;
       this.startOffset = 0;
       this._lastTransition = "gapless";
+      this.publish();
       this.emitter.emit("durationchange", { duration: armed.loaded.duration });
       this.emitter.emit("trackchange", {
         index: armed.index,
@@ -489,6 +534,7 @@ export class EkoWebEngine {
       return;
     }
     this._lastTransition = "gap";
+    this.publish();
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
     if (pauseRequested) {
@@ -558,6 +604,7 @@ export class EkoWebEngine {
 
   private setState(s: EkoState): void {
     this._state = s;
+    this.publish();
   }
 
   private startRaf(): void {
