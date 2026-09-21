@@ -53,24 +53,46 @@
     <h1>eko-web harness</h1>
     <p>
       Pick a short loop, or press <b>Use a test tone</b> if you have nothing to hand. Then press
-      play and listen at the seam. Untick gapless to hear the gap appear.
+      play and listen at the seam. Adjust the transition mode and other controls to hear the
+      differences.
     </p>
     <p class="hint" id="hint">
-      Play is disabled until audio is loaded. <b>source</b> forces the playback strategy:
-      <b>buffer</b> decodes the whole file and is the only path that can be gapless, while
-      <b>element</b> streams and never is, so on element you should hear a seam even with gapless
-      ticked. On <b>auto</b> a local file always takes the buffer path, because the size probe
-      cannot read a blob URL. The test tone is a continuous 440 Hz sine of exactly 880 cycles, so
-      its loop point is phase continuous: with gapless on you should hear one unbroken tone, and
-      with it off a click every two seconds. Any click you hear with gapless on is the engine, not
-      the file.
+      Play is disabled until audio is loaded. <b>Transition</b> modes: gapless abuts tracks with no
+      silence; crossfade overlaps them smoothly; gap leaves silence between. With crossfade, the
+      overlap time is adjustable. <b>Shuffle</b> randomizes playback order without repeating tracks.
+      <b>Repeat</b> one plays a single track in a loop, all loops the entire queue.
+      <b>Source</b> forces the playback strategy: buffer decodes the whole file and is the only path
+      that can be gapless, while element streams and never is, so on element you should hear a seam
+      even with gapless. On auto a local file always takes the buffer path. The test tone is a
+      continuous 440 Hz sine of exactly 880 cycles, so its loop point is phase continuous: with
+      gapless on you should hear one unbroken tone, and with gap mode a click every two seconds.
     </p>
 
     <div class="row">
-      <input type="file" id="file" accept="audio/*" />
+      <input type="file" id="file" accept="audio/*" multiple />
       <button id="tone">Use a test tone</button>
       <button id="play" disabled>Play</button>
-      <label><input type="checkbox" id="gapless" checked /> gapless</label>
+      <label>
+        transition
+        <select id="transition-mode">
+          <option value="gapless">gapless</option>
+          <option value="crossfade">crossfade</option>
+          <option value="gap">gap</option>
+        </select>
+      </label>
+      <label id="crossfade-label" style="display: none">
+        crossfade (seconds)
+        <input type="number" id="crossfade-seconds" min="0.1" max="10" step="0.1" value="3" />
+      </label>
+      <label><input type="checkbox" id="shuffle" /> shuffle</label>
+      <label>
+        repeat
+        <select id="repeat-mode">
+          <option value="none">none</option>
+          <option value="one">one</option>
+          <option value="all">all</option>
+        </select>
+      </label>
       <label>
         source
         <select id="source-mode">
@@ -93,6 +115,8 @@
       <dd id="normalize">-</dd>
       <dt>transition</dt>
       <dd id="transition">-</dd>
+      <dt>queue position</dt>
+      <dd id="queue-position">-</dd>
       <dt>time</dt>
       <dd id="time">0.00 / 0.00</dd>
       <dt>errors</dt>
@@ -132,22 +156,27 @@
       let shelf = null;
       let analyser = null;
       let bins = null;
-      let currentFile = null;
-      let objectUrl = null;
+      let currentFiles = [];
+      let objectUrls = [];
 
       /**
-       * The boundary policy is a construction-time option, so flipping the A/B rebuilds the
-       * engine. Same file, same graph, same EQ: the transition is the only variable.
+       * The boundary policy and queue options are construction-time options, so flipping any
+       * control rebuilds the engine. Same file, same graph: the control is the only variable.
        */
       function rebuild() {
         engine?.destroy();
+        const transitionMode = $("transition-mode").value;
         engine = new EkoWebEngine({
           normalize: true,
-          transition: $("gapless").checked ? "gapless" : "gap",
+          transition: transitionMode,
+          crossfadeSeconds:
+            transitionMode === "crossfade" ? parseFloat($("crossfade-seconds").value) : 3,
+          shuffle: $("shuffle").checked,
+          repeat: $("repeat-mode").value,
           source: $("source-mode").value,
         });
         wire();
-        if (currentFile) loadFile(currentFile);
+        if (currentFiles.length > 0) loadFiles(currentFiles);
       }
 
       function wire() {
@@ -163,6 +192,9 @@
           $("play").textContent = snapshot.paused ? "Play" : "Pause";
           $("normalize").textContent = snapshot.track
             ? `${linearToDb(engine.normGain).toFixed(2)} dB applied`
+            : "-";
+          $("queue-position").textContent = snapshot.track
+            ? `${snapshot.index + 1} / ${snapshot.track?.queueLength ?? 1}`
             : "-";
         });
 
@@ -212,30 +244,53 @@
         return new Blob([bytes], { type: "audio/wav" });
       }
 
-      /** Queue the same file twice, so the loop seam is a real track boundary. */
-      function loadFile(file) {
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-        objectUrl = URL.createObjectURL(file);
-        engine.setQueue([
-          { id: "a", src: objectUrl },
-          { id: "b", src: objectUrl },
-        ]);
+      /**
+       * Load one or more files into the queue. If a single file is provided,
+       * queue it twice so the loop seam is a real track boundary.
+       */
+      function loadFiles(files) {
+        objectUrls.forEach((url) => URL.revokeObjectURL(url));
+        objectUrls = [];
+
+        if (files.length === 0) {
+          $("play").disabled = true;
+          return;
+        }
+
+        const queue = [];
+        let trackId = 0;
+
+        if (files.length === 1) {
+          // Single file: queue it twice for the loop test
+          const objectUrl = URL.createObjectURL(files[0]);
+          objectUrls.push(objectUrl);
+          queue.push({ id: `track-${trackId++}`, src: objectUrl });
+          queue.push({ id: `track-${trackId++}`, src: objectUrl });
+        } else {
+          // Multiple files: queue each once
+          files.forEach((file) => {
+            const objectUrl = URL.createObjectURL(file);
+            objectUrls.push(objectUrl);
+            queue.push({ id: `track-${trackId++}`, src: objectUrl });
+          });
+        }
+
+        engine.setQueue(queue);
         $("play").disabled = false;
       }
 
       $("tone").addEventListener("click", () => {
-        currentFile = makeTestTone();
-        loadFile(currentFile);
+        currentFiles = [makeTestTone()];
+        loadFiles(currentFiles);
         $("hint").textContent =
-          "Test tone loaded: 440 Hz, 2 s per lap. With gapless on you should hear one unbroken " +
-          "tone. Untick gapless and the seam becomes audible.";
+          "Test tone loaded: 440 Hz, 2 s per lap. With gapless transition you should hear one unbroken tone. Switch to gap mode and the seam becomes audible.";
       });
 
       $("file").addEventListener("change", (event) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        currentFile = file;
-        loadFile(file);
+        const files = Array.from(event.target.files || []);
+        if (files.length === 0) return;
+        currentFiles = files;
+        loadFiles(currentFiles);
       });
 
       $("play").addEventListener("click", async () => {
@@ -243,7 +298,17 @@
         else engine.pause();
       });
 
-      $("gapless").addEventListener("change", rebuild);
+      $("transition-mode").addEventListener("change", () => {
+        const isXfade = $("transition-mode").value === "crossfade";
+        $("crossfade-label").style.display = isXfade ? "" : "none";
+        rebuild();
+      });
+
+      $("crossfade-seconds").addEventListener("change", rebuild);
+
+      $("shuffle").addEventListener("change", rebuild);
+
+      $("repeat-mode").addEventListener("change", rebuild);
 
       $("source-mode").addEventListener("change", rebuild);
 

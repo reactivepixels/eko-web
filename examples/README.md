@@ -19,10 +19,16 @@ picker does nothing and Play stays disabled. The page detects this and says so, 
 `npm run harness` avoids it entirely. Opening the file directly over `file://` fails the
 same way, because browsers block ES module imports there.
 
-Pick a short loop, press play, and listen at the seam where it repeats. Untick **gapless**
-and listen again: the silence you hear is what a plain `<audio>` element does at every
-track boundary. The **shelf** checkbox proves the user insert point by putting a real
-biquad into the chain, and the spectrum is drawn from the engine's analyser tap.
+Pick a short loop or multiple tracks, press play, and listen at the seams where tracks
+meet. Use **transition** to switch between gapless (no silence), crossfade (overlapped),
+and gap (silent break). With a single file the engine queues it twice to test looping.
+The **shuffle** checkbox randomizes the playback order without repeating a track until
+all have played once. The **repeat** select lets you loop one track or the entire queue.
+The **crossfade seconds** control appears only when crossfade is selected, and adjusts
+the overlap duration. The **queue position** readout shows the current track index so you
+can watch shuffle reordering happen. The **shelf** checkbox proves the user insert point
+by putting a real biquad into the chain, and the spectrum is drawn from the engine's
+analyser tap.
 
 ## Vanilla demo (`index.html`), superseded by `player/`
 
