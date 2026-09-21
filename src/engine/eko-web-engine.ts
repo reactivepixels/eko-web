@@ -277,14 +277,31 @@ export class EkoWebEngine {
    * it first). `advanceWithGap()` is the one exception: it passes a peeked track and only
    * commits the queue's move, via `advance()`, once this load actually succeeds, so a manual
    * `next()`/`previous()` racing an in-flight gap-advance still sees the queue where it was.
+   *
+   * `stillValid`, when supplied, is checked at the same instant as `token`, right after the
+   * await and before anything is assigned: it catches a change to what plays next that does
+   * not bump `advanceToken` (a shuffle or repeat toggle mid-load). Only `advanceWithGap()`
+   * passes one; `skipTo()` and `startLoad()` have already moved the queue to `index` before
+   * calling this, so `token` alone is enough for them.
    */
-  private async loadIndex(index: number, track: EkoTrack, token: number): Promise<void> {
+  private async loadIndex(
+    index: number,
+    track: EkoTrack,
+    token: number,
+    stillValid?: () => boolean,
+  ): Promise<void> {
     this.loading = true;
     this.setState("loading");
     this.emitter.emit("loadstart", { index });
     try {
       const loaded = await this.loadTrack(track);
-      if (token !== this.advanceToken) {
+      if (token !== this.advanceToken || (stillValid && !stillValid())) {
+        // The token check catches setQueue()/skipTo()/destroy(). `stillValid`, when the
+        // caller supplies it, catches something that changed what plays next without
+        // bumping the token (a shuffle or repeat toggle): the load has to be thrown away
+        // before it ever touches `current`/state, not just before the caller's own
+        // post-await commit, or a subsequent play() would start the dangling source this
+        // load just built.
         loaded.dispose();
         return;
       }
@@ -429,17 +446,25 @@ export class EkoWebEngine {
   /** Changing this reshuffles the remaining tracks; it does not disturb what is playing. */
   setShuffle(on: boolean): void {
     this.assertNotDestroyed();
+    // What the re-arm below actually cares about is whether what plays next changed, not
+    // whether the flag did: comparing peekNextIndex() before and after, rather than just
+    // `on` against the old value, also skips the teardown on the rarer case where the flag
+    // flips but the bag's first draw happens to land back on the same index.
+    const nextBefore = this.tracks.peekNextIndex();
     this.tracks.shuffle = on;
     this.publish();
-    // What plays next may have changed, so anything already armed is now the wrong track.
+    if (this.tracks.peekNextIndex() === nextBefore) return;
+    // What plays next changed, so anything already armed is now the wrong track.
     this.clearArmed();
     void this.armNext();
   }
 
   setRepeat(mode: RepeatMode): void {
     this.assertNotDestroyed();
+    const nextBefore = this.tracks.peekNextIndex();
     this.tracks.repeat = mode;
     this.publish();
+    if (this.tracks.peekNextIndex() === nextBefore) return;
     this.clearArmed();
     void this.armNext();
   }
@@ -685,7 +710,9 @@ export class EkoWebEngine {
     // succeeds. If a manual next()/previous() supersedes this in the meantime, it sees the
     // queue exactly where it was, not pre-moved to where this advance was heading.
     const track = this.tracks.peekNext();
-    if (track) await this.loadIndex(index, track, token);
+    if (track) {
+      await this.loadIndex(index, track, token, () => this.tracks.peekNextIndex() === index);
+    }
     if (token !== this.advanceToken) {
       // Superseded by setQueue(), skipTo() or destroy() while this was loading. Whichever
       // call superseded it owns the engine's state now; this advance has nothing left to
@@ -694,10 +721,11 @@ export class EkoWebEngine {
     }
     // `token` only catches setQueue()/skipTo()/destroy(); it does not catch something that
     // changes what plays next without moving the queue's position (a shuffle or repeat
-    // toggle) or without bumping advanceToken. armNext() re-asks peekNextIndex() after its
-    // own await for exactly this reason; do the same here, or advance() below could commit
-    // to a target this load never actually fetched. Do not remove this as redundant with
-    // the token check above: it guards a different kind of staleness.
+    // toggle) or without bumping advanceToken. The `stillValid` predicate passed to
+    // loadIndex() above already rejects the load on exactly this condition before it ever
+    // touches `current`, so this repeats the same check purely as defence in depth: it
+    // still has to stop advance() and the trackchange below from firing even if a future
+    // change to loadIndex() ever loosened that guard.
     if (this.tracks.peekNextIndex() !== index) {
       return;
     }

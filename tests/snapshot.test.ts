@@ -130,12 +130,21 @@ describe("snapshot: shuffle and repeat", () => {
     expect(engine.getSnapshot().repeat).toBe("all");
   });
 
-  it("does not notify when a setter changes nothing", () => {
+  it("does not notify when setShuffle changes nothing", () => {
     const { engine } = setup();
     engine.setShuffle(true);
     const listener = vi.fn();
     engine.subscribe(listener);
     engine.setShuffle(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("does not notify when setRepeat changes nothing", () => {
+    const { engine } = setup();
+    engine.setRepeat("all");
+    const listener = vi.fn();
+    engine.subscribe(listener);
+    engine.setRepeat("all");
     expect(listener).not.toHaveBeenCalled();
   });
 });

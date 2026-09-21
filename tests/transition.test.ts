@@ -488,9 +488,26 @@ describe("other transport calls during a gap-advance", () => {
   // advanceToken cannot make it commit to a target it never actually fetched. setRepeat()
   // and setShuffle() are exactly that: they change peekNextIndex() without moving the
   // queue's position and without bumping advanceToken.
-  it("a repeat change during an in-flight gap-advance does not commit to the stale target", async () => {
-    // Same fetch-gating shape as "a skip's own resume is not blocked..." above: hold the
-    // advance's own fetch open so a change can land while it is still mid-flight.
+  //
+  // The check that matters most is inside loadIndex() itself, at the same instant as the
+  // `current` assignment: the load resolves at track B, and if the guard only ran in
+  // advanceWithGap afterward, loadIndex would have already made track B `current`,
+  // published it, and disposed track A's real, still-current source, all before
+  // advanceWithGap ever got a chance to notice. The three tests below each check a
+  // different consequence of that same rejected load, sharing one setup that drives it.
+
+  /**
+   * Holds a gap-advance's own fetch for track B open, flips repeat to "one" while it is
+   * in flight (which changes what plays next without bumping advanceToken, the same
+   * disagreement the stillValid check in loadIndex() exists to catch), then releases it
+   * and lets everything settle.
+   */
+  async function setupStaleGapAdvance(): Promise<{
+    ctx: MockAudioContext;
+    engine: EkoWebEngine;
+    tracks: { id: string; src: string; source: "buffer" }[];
+    changed: ReturnType<typeof vi.fn>;
+  }> {
     const ctx = new MockAudioContext();
     ctx.nextBuffer = makeToneBuffer(0.5);
     const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext, transition: "gap" });
@@ -534,8 +551,7 @@ describe("other transport calls during a gap-advance", () => {
 
     // Track A ends: the advance starts loading track B (fetch call #2, held open). While
     // it is in flight, flip repeat to "one". peekNextIndex() now answers with the current
-    // index (still track A, 0) instead of the target (1) the advance captured, the same
-    // disagreement the guard in advanceWithGap() exists to catch.
+    // index (still track A, 0) instead of the target (1) the advance captured.
     ctx.sources[0]!.fireEnded();
     engine.setRepeat("one");
 
@@ -546,16 +562,49 @@ describe("other transport calls during a gap-advance", () => {
     await flush();
     await flush();
 
+    return { ctx, engine, tracks, changed };
+  }
+
+  it("a repeat change during an in-flight gap-advance does not commit to the stale target", async () => {
+    const { engine, tracks, changed } = await setupStaleGapAdvance();
+
     // The advance must not commit to the stale target: no trackchange reporting it, and
     // the boundary is never recorded as a gap.
     expect(changed).not.toHaveBeenCalled();
     expect(engine.lastTransition).toBeNull();
     expect(engine.currentIndex).toBe(0);
+    // The rejected load must never have been assigned as `current` either: the snapshot's
+    // `track` has to keep agreeing with `index`, or a consumer reads track B's metadata
+    // against an index that still says track A.
+    expect(engine.getSnapshot().track).toEqual(tracks[0]);
+    expect(engine.getSnapshot().index).toBe(0);
+  });
+
+  it("does not dispose the still-current track, and never builds a node for the rejected load", async () => {
+    const { ctx } = await setupStaleGapAdvance();
+
+    // Track A's own source, which was never actually superseded, must not have been torn
+    // down as a side effect of a load that got rejected: exactly one source exists
+    // throughout (track A's), and it was never stopped.
+    expect(ctx.sources.length).toBe(1);
+    expect(ctx.sources[0]!.stopped).toBe(false);
+  });
+
+  it("does not start the stale track on a subsequent play()", async () => {
+    const { ctx, engine } = await setupStaleGapAdvance();
+
+    // A consumer reacting to `paused` (still true here) taps play. If the rejected load
+    // had been left as `current`, this would start it: a fresh source would be built and
+    // started for a track the queue never actually reached.
+    void engine.play();
+    await flush();
+
+    expect(ctx.sources.length).toBe(1);
   });
 });
 
 describe("shuffle and repeat re-arm", () => {
-  it("tears down an already-armed track and arms a fresh one when shuffle changes", async () => {
+  it("tears down an already-armed track and arms a fresh one when what plays next changes", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup();
     const ready = whenReady(engine);
@@ -569,7 +618,11 @@ describe("shuffle and repeat re-arm", () => {
     const armedBefore = ctx.sources[1]!;
     expect(armedBefore.stopped).toBe(false);
 
-    engine.setShuffle(true);
+    // repeat "one" changes what plays next from track B (index 1) to the current track
+    // itself (index 0), a genuine change (deterministic, unlike shuffle with only two
+    // tracks, where the bag's only possible draw is the same index sequential order
+    // would have picked anyway).
+    engine.setRepeat("one");
 
     // The stale armed source is torn down synchronously with the setter, before anything
     // new is armed.
@@ -580,6 +633,28 @@ describe("shuffle and repeat re-arm", () => {
     // A fresh source was armed in its place.
     expect(ctx.sources.length).toBe(3);
     expect(ctx.sources[2]!.stopped).toBe(false);
+  });
+
+  it("does not tear down a valid armed track when the setter is a genuine no-op", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    expect(ctx.sources.length).toBe(2);
+    const armed = ctx.sources[1]!;
+    expect(armed.stopped).toBe(false);
+
+    // Shuffle is already off and repeat is already "none": neither call changes what
+    // plays next, so the valid prefetch must survive both, not be torn down and redone.
+    engine.setShuffle(false);
+    engine.setRepeat("none");
+
+    expect(armed.stopped).toBe(false);
+    expect(ctx.sources.length).toBe(2);
   });
 });
 
