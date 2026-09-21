@@ -174,4 +174,48 @@ describe("crossfade", () => {
     expect(engine.lastTransition).toBe("crossfade");
     expect(changed).toHaveBeenCalledWith({ index: 1, track: tracks[1], transition: "crossfade" });
   });
+
+  it("pause then resume mid-crossfade leaves the outgoing gain at its own normGain, not mid-ramp", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup(3, { transition: "crossfade", crossfadeSeconds: 1 });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    const normGain = engine.normGain;
+    await engine.play();
+    await flush(); // arms B; schedules A's own gain ramp from normGain@2 down to 0@3
+
+    const [outgoing] = sourceGains(ctx);
+
+    ctx.currentTime = 2.5; // partway through the overlap: the ramp is mid-flight
+    engine.pause();
+    // A paused track should hold its own steady level, not whatever the in-flight ramp
+    // left behind (roughly half of normGain at this point, without the fix).
+    expect(outgoing!.gain.valueAt(2.5)).toBeCloseTo(normGain, 6);
+
+    void engine.play(); // resume: reuses the SAME current, and its SAME gain node
+    // Resuming only restarts the playback node; it never touches the per-source gain
+    // (that is fadeGain's job, a different node). The pin from pause() must still hold.
+    expect(outgoing!.gain.valueAt(2.5)).toBeCloseTo(normGain, 6);
+    expect(outgoing!.gain.valueAt(3)).toBeCloseTo(normGain, 6); // the old ramp's target is gone
+  });
+
+  it("seeking mid-crossfade leaves the outgoing gain at its own normGain after the restart", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup(3, { transition: "crossfade", crossfadeSeconds: 1 });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    const normGain = engine.normGain;
+    await engine.play();
+    await flush(); // arms B; schedules A's own gain ramp from normGain@2 down to 0@3
+
+    const [outgoing] = sourceGains(ctx);
+
+    ctx.currentTime = 2.5; // partway through the overlap: the ramp is mid-flight
+    engine.seek(1); // seeks backward, restarting the SAME current track through the SAME gain
+
+    expect(outgoing!.gain.valueAt(2.5)).toBeCloseTo(normGain, 6);
+    expect(outgoing!.gain.valueAt(3)).toBeCloseTo(normGain, 6); // the old ramp's target is gone
+  });
 });

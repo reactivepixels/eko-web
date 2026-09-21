@@ -421,6 +421,7 @@ export class EkoWebEngine {
     const position = this.currentTime; // capture before the source stops
     this.fadeOutAndStop();
     this.clearArmed();
+    this.pinCurrentGain();
     this.startOffset = position;
     this._paused = true;
     this.setState("paused");
@@ -439,6 +440,7 @@ export class EkoWebEngine {
       // fades back in from silence, so the seek is inaudible in both directions.
       const rampEnd = this.fadeOutAndStop();
       this.clearArmed();
+      this.pinCurrentGain();
       this.startSource(t, rampEnd);
       void this.armNext(); // re-arm from the new position
     }
@@ -893,6 +895,25 @@ export class EkoWebEngine {
     const rampEnd = rampTo(this.graph!.fadeGain.gain, 0, ctx.currentTime, this.fadeSeconds);
     this.stopSource(rampEnd);
     return rampEnd;
+  }
+
+  /**
+   * Reset the current source's own gain back to its steady `normGain`, cancelling any
+   * crossfade automation still scheduled on it. `current` is what pause() and seek()
+   * restart rather than replace, and a crossfade schedules a real ramp on its gain as the
+   * outgoing side of a boundary; that automation is on the AudioParam itself, independent
+   * of whether the armed track it paired with is still around (clearArmed() only disposes
+   * that other side). Left alone, a later restart plays back through whatever level the
+   * ramp left the node at, partway down or pinned at silence, instead of the track's own
+   * level. This is unrelated to fadeGain's own click-removal ramp on the shared node,
+   * which startSource() still handles on its own.
+   */
+  private pinCurrentGain(): void {
+    const gain = this.current?.gain;
+    if (!gain || !this.ctx) return;
+    const at = this.ctx.currentTime;
+    gain.gain.cancelScheduledValues(at);
+    gain.gain.setValueAtTime(this.current!.normGain, at);
   }
 
   /** Stop both the current and armed sources (used by pause/seek/skip/destroy). */
