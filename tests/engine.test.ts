@@ -555,7 +555,7 @@ function nextTrackChange(
   });
 }
 
-describe("EkoWebEngine: playing a specific queue index (I6)", () => {
+describe("EkoWebEngine: playing a specific queue index", () => {
   it("setQueue(tracks, startIndex) loads the requested track instead of always track 0", async () => {
     restoreFetch = stubFetch();
     const { engine } = makeEngine();
@@ -609,7 +609,7 @@ describe("EkoWebEngine: playing a specific queue index (I6)", () => {
   });
 });
 
-describe("EkoWebEngine: setQueue([]) clears the engine (I3)", () => {
+describe("EkoWebEngine: setQueue([]) clears the engine", () => {
   it("goes idle, with no leftover track, duration or sourceKind, when the queue is emptied while playing", async () => {
     restoreFetch = stubFetch();
     const { engine } = makeEngine();
@@ -632,7 +632,7 @@ describe("EkoWebEngine: setQueue([]) clears the engine (I3)", () => {
   });
 });
 
-describe("EkoWebEngine: index/track agreement during a manual skip's load window (I5)", () => {
+describe("EkoWebEngine: index/track agreement during a manual skip's load window", () => {
   it("sources track from the queue's target while the load is in flight, not the still-loaded track", async () => {
     restoreFetch = stubFetch();
     const ctx = new MockAudioContext();
