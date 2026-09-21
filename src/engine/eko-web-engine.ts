@@ -26,6 +26,20 @@ interface ArmedTrack {
   startCtxTime: number;
 }
 
+/**
+ * A duration option, or the default when the caller hands over something that is not one.
+ *
+ * These land in `source.start()` and in ramp end times as plain arithmetic, so a bad value
+ * does not fail where it was passed: a negative overlap schedules the next track after the
+ * boundary instead of before it, and NaN poisons every time derived from it. An empty
+ * number input in a browser produces NaN, so neither needs anyone to be doing anything
+ * strange.
+ */
+function seconds(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.max(0, value);
+}
+
 const DEFAULTS = {
   normalize: true,
   targetLufs: -16,
@@ -118,8 +132,8 @@ export class EkoWebEngine {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
     this.transition = options.transition ?? DEFAULTS.transition;
-    this.crossfadeSeconds = options.crossfadeSeconds ?? DEFAULTS.crossfadeSeconds;
-    this.fadeSeconds = options.fadeSeconds ?? DEFAULTS.fadeSeconds;
+    this.crossfadeSeconds = seconds(options.crossfadeSeconds, DEFAULTS.crossfadeSeconds);
+    this.fadeSeconds = seconds(options.fadeSeconds, DEFAULTS.fadeSeconds);
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
     this.injectedContext = options.context;

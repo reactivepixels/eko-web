@@ -162,6 +162,43 @@ describe("crossfade", () => {
     expect(incoming!.gain.valueAt(endTime)).toBeCloseTo(normGain, 6);
   });
 
+  /**
+   * The option reaches `source.start()` and the ramp times as arithmetic, so a value that
+   * is not a sane duration does not fail loudly: it schedules a start in the future or at
+   * NaN and quietly corrupts the boundary after it. An empty number input in a browser
+   * hands over NaN, so this is reachable without anyone doing anything strange.
+   */
+  describe("crossfadeSeconds validation", () => {
+    const configFor = (crossfadeSeconds: number): number =>
+      new EkoWebEngine({
+        context: new MockAudioContext() as unknown as AudioContext,
+        transition: "crossfade",
+        crossfadeSeconds,
+      }).config.crossfadeSeconds;
+
+    it("clamps a negative overlap to zero rather than scheduling the next track after the boundary", () => {
+      expect(configFor(-2)).toBe(0);
+    });
+
+    it("falls back to the default when the overlap is not a finite number", () => {
+      expect(configFor(NaN)).toBe(3);
+      expect(configFor(Infinity)).toBe(3);
+    });
+
+    it("guards the pause and seek fade the same way", () => {
+      const fadeFor = (fadeSeconds: number): number =>
+        new EkoWebEngine({
+          context: new MockAudioContext() as unknown as AudioContext,
+          fadeSeconds,
+        }).config.fadeSeconds;
+      const fallback = new EkoWebEngine({
+        context: new MockAudioContext() as unknown as AudioContext,
+      }).config.fadeSeconds;
+      expect(fadeFor(-1)).toBe(0);
+      expect(fadeFor(NaN)).toBe(fallback);
+    });
+  });
+
   it("degrades to a gap when the incoming source cannot be sample-accurate", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup(0.5, { transition: "crossfade" });
