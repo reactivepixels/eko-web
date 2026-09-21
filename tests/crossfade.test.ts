@@ -124,6 +124,44 @@ describe("crossfade", () => {
     expect(armed.startWhen).toBeGreaterThanOrEqual(0);
   });
 
+  it("clamps the overlap to the incoming track's own duration, not just the outgoing one's remaining time", async () => {
+    restore = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5, 5); // track A: 5 seconds
+    const engine = new EkoWebEngine({
+      context: ctx as unknown as AudioContext,
+      transition: "crossfade",
+      crossfadeSeconds: 3,
+      // The two tracks are different lengths here, so they measure marginally different
+      // loudness. Normalization is another test's subject; turning it off keeps both sides
+      // at unity so the envelope below is about the overlap and nothing else.
+      normalize: false,
+    });
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+    ]);
+    await ready;
+    ctx.nextBuffer = makeToneBuffer(0.5, 2); // track B: shorter than the configured overlap
+    const normGain = engine.normGain;
+    await engine.play();
+    await flush();
+
+    const endTime = trackEndTime(0, 5, 0);
+    const armed = ctx.sources[1]!;
+    // A 3 second overlap would have B end a second before A did, and the promotion at B's
+    // end hard-stops A partway down its own ramp. Two seconds is the most B can cover.
+    expect(armed.startWhen).toBeCloseTo(endTime - 2, 6);
+
+    // Both sides still ramp across the whole (now shorter) overlap.
+    const [outgoing, incoming] = sourceGains(ctx);
+    expect(outgoing!.gain.valueAt(endTime - 2)).toBeCloseTo(normGain, 6);
+    expect(outgoing!.gain.valueAt(endTime)).toBeCloseTo(0, 6);
+    expect(incoming!.gain.valueAt(endTime - 2)).toBeCloseTo(0, 6);
+    expect(incoming!.gain.valueAt(endTime)).toBeCloseTo(normGain, 6);
+  });
+
   it("degrades to a gap when the incoming source cannot be sample-accurate", async () => {
     restore = stubFetch();
     const { ctx, engine, tracks } = setup(0.5, { transition: "crossfade" });

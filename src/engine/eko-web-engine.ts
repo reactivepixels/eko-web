@@ -97,6 +97,14 @@ export class EkoWebEngine {
   // when they start and check it again after their await, so a superseded load never assigns
   // state or emits events for a track the engine has already moved past.
   private advanceToken = 0;
+  // The boundary an armNext() call is currently loading for: the queue index it targets and
+  // the source it is scheduled behind. Arming is async, and several calls can ask for the
+  // same boundary in quick succession (a scrub issues one per seek()); without this each
+  // one runs its own fetch and decode of the same track and throws all but one away, which
+  // for a five minute FLAC is hundreds of megabytes of transient decode. The source is part
+  // of the key, not just the index, because a boundary that has since been crossed can land
+  // back on the same index (repeat "one"), and that genuinely does need arming again.
+  private arming: { index: number; source: LoadedSource } | null = null;
   private rafHandle: number | null = null;
   // Sources that were stopped on the last sample of a fade already in flight, held here
   // until that sample has actually passed. Tearing one down disconnects its own gain node,
@@ -662,20 +670,18 @@ export class EkoWebEngine {
     if (!this.current.canGapless) return;
     const nextIndex = this.tracks.peekNextIndex();
     if (nextIndex < 0 || this.armed) return;
+    // What this arm is scheduled against, captured before the load so it can be checked
+    // against the live values after it. `armed` cannot stand in for any of this: it is only
+    // assigned once the load has already finished, which is far too late to notice that the
+    // boundary moved underneath it.
+    const token = this.advanceToken;
+    const currentAtStart = this.current;
+    if (this.isAlreadyArming(nextIndex, currentAtStart)) return;
     const track = this.tracks.peekNext();
     if (!track) return;
 
-    // The boundary is fixed once the current source started (start time + offset).
-    const endCtxTime = trackEndTime(this.startCtxTime, this.current.duration, this.startOffset);
-    // Crossfade overlaps, gapless abuts. Clamp the overlap to what is actually left of the
-    // outgoing track, so a long crossfade on a short (or already part-played) track cannot
-    // schedule a start in the past.
-    const remaining = Math.max(0, endCtxTime - this.ctx.currentTime);
-    const overlap =
-      this.transition === "crossfade" ? Math.min(this.crossfadeSeconds, remaining) : 0;
-    const startAt = endCtxTime - overlap;
-
     let next: LoadedSource;
+    this.arming = { index: nextIndex, source: currentAtStart };
     try {
       next = await this.loadTrack(track);
     } catch (cause) {
@@ -688,8 +694,25 @@ export class EkoWebEngine {
         ),
       });
       return;
+    } finally {
+      // Every path out of the load, including the rejections below, has to release this or
+      // arming is dead for the rest of the session. Only release the marker this call set:
+      // a later arm for a different boundary may already own it.
+      if (this.arming?.index === nextIndex && this.arming.source === currentAtStart) {
+        this.arming = null;
+      }
     }
-    if (this._paused || !this.ctx || this.tracks.peekNextIndex() !== nextIndex || this.armed) {
+    if (
+      this._paused ||
+      !this.ctx ||
+      // setQueue(), skipTo() or destroy() took the engine somewhere else mid-load.
+      token !== this.advanceToken ||
+      // A boundary was crossed while this loaded, so it is arming behind the track that is
+      // actually playing now.
+      this.current !== currentAtStart ||
+      this.tracks.peekNextIndex() !== nextIndex ||
+      this.armed
+    ) {
       next.dispose();
       return;
     }
@@ -700,6 +723,24 @@ export class EkoWebEngine {
       return;
     }
 
+    // Read the clock now, not before the load. seek() moves the boundary without bumping
+    // advanceToken and without replacing `current`, so neither check above can see it: an
+    // arm still holding the clock it read when it started schedules the next track against
+    // a boundary that has since moved, which is a whole seek's worth of silence (or of two
+    // tracks playing at once) on a boundary this library exists to make seamless.
+    const endCtxTime = trackEndTime(this.startCtxTime, currentAtStart.duration, this.startOffset);
+    // Crossfade overlaps, gapless abuts. Clamp the overlap to what is actually left of the
+    // outgoing track, so a long crossfade on a short (or already part-played) track cannot
+    // schedule a start in the past, and to the incoming track's own duration, or the
+    // incoming side would end first and its promotion would hard-stop the outgoing one
+    // partway down its ramp.
+    const remaining = Math.max(0, endCtxTime - this.ctx.currentTime);
+    const overlap =
+      this.transition === "crossfade"
+        ? Math.min(this.crossfadeSeconds, remaining, next.duration)
+        : 0;
+    const startAt = endCtxTime - overlap;
+
     next.connect(this.graph!.input);
     next.onEnded(() => this.handleSourceEnded());
     next.start(startAt, 0);
@@ -707,11 +748,11 @@ export class EkoWebEngine {
       // Both sides ramp across the overlap: the outgoing track down to silence, the
       // incoming one up to its OWN normGain, not to 1, or normalization would be undone
       // for the incoming track at exactly the moment both are audible.
-      const outgoing = this.current.gain;
+      const outgoing = currentAtStart.gain;
       const incoming = next.gain;
       if (outgoing) {
         outgoing.gain.cancelScheduledValues(startAt);
-        outgoing.gain.setValueAtTime(this.current.normGain, startAt);
+        outgoing.gain.setValueAtTime(currentAtStart.normGain, startAt);
         outgoing.gain.linearRampToValueAtTime(0, endCtxTime);
       }
       if (incoming) {
@@ -826,6 +867,11 @@ export class EkoWebEngine {
     this.publish();
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
     this.resolvePendingIntent();
+  }
+
+  /** Whether an arm for exactly this boundary is already loading; see the `arming` field. */
+  private isAlreadyArming(index: number, source: LoadedSource): boolean {
+    return this.arming !== null && this.arming.index === index && this.arming.source === source;
   }
 
   /**

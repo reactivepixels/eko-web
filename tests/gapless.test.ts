@@ -229,4 +229,72 @@ describe("gapless", () => {
       warnSpy.mockRestore();
     }
   });
+  /**
+   * Both of these hang off the same seek: play() fires an arm, seek() moves the boundary
+   * while that arm is still awaiting its own load, and seek() fires a second arm of its own.
+   */
+  function seekDuringArm(): {
+    ctx: MockAudioContext;
+    engine: EkoWebEngine;
+    tracks: Array<{ id: string; src: string; source: "buffer" }>;
+    fetches: () => number;
+  } {
+    let count = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      count++;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (): string | null => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5, 3); // 3-second tracks
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    // Forced to the buffer strategy so each load is exactly one fetch, with no HEAD probe
+    // in between to count around.
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
+    return { ctx, engine, tracks, fetches: () => count };
+  }
+
+  it("schedules the armed track against the clock a seek left behind, not the one captured before its load", async () => {
+    const { ctx, engine, tracks } = seekDuringArm();
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    engine.seek(1); // lands while the first arm is still awaiting its load
+    await flush();
+
+    // The seek restarted A at ctx 0.01 from offset 1, so A now ends at 2.01. An arm still
+    // holding the clock it read before the load schedules B at 3 instead: a second of
+    // silence on a boundary that exists to have none.
+    const armed = ctx.sources[ctx.sources.length - 1]!;
+    expect(armed.startWhen).toBeCloseTo(2.01, 6);
+  });
+
+  it("does not start a second load for a boundary another arm is already loading", async () => {
+    const { engine, tracks, fetches } = seekDuringArm();
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    engine.seek(1);
+    engine.seek(2); // a scrub is many seeks, and every one of them re-arms
+    await flush();
+
+    // Track A's own load, plus exactly one for the boundary. Without the in-flight marker
+    // each seek issues its own fetch and decode of the same track and throws all but one
+    // away, which for a five minute FLAC is hundreds of megabytes of transient decode.
+    expect(fetches()).toBe(2);
+  });
 });
