@@ -130,6 +130,26 @@ describe("subscription contract", () => {
     ]);
     expect(engine.getSnapshot().queueLength).toBe(2);
   });
+
+  it("triggers a new snapshot when only queue length changes", async () => {
+    restore = stubFetch();
+    const { engine } = setup();
+    const trackA = { id: "a", src: "/a.flac" };
+    const trackB = { id: "b", src: "/b.flac" };
+    const trackC = { id: "c", src: "/c.flac" };
+
+    const ready = whenReady(engine);
+    engine.setQueue([trackA, trackB]);
+    await ready;
+    const snapshotWith2 = engine.getSnapshot();
+    expect(snapshotWith2.queueLength).toBe(2);
+
+    engine.setQueue([trackA, trackB, trackC]);
+    const snapshotWith3 = engine.getSnapshot();
+
+    expect(snapshotWith3.queueLength).toBe(3);
+    expect(snapshotWith3).not.toBe(snapshotWith2);
+  });
 });
 
 describe("snapshot: shuffle and repeat", () => {
