@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
+import { EMPTY_SNAPSHOT, snapshotsEqual } from "../src/engine/snapshot";
 import { MockAudioContext, makeToneBuffer, stubFetch } from "./mock-audio";
 
 function whenReady(engine: EkoWebEngine): Promise<void> {
@@ -131,7 +132,7 @@ describe("subscription contract", () => {
     expect(engine.getSnapshot().queueLength).toBe(2);
   });
 
-  it("triggers a new snapshot when only queue length changes", async () => {
+  it("publishes a new snapshot object when the queue is replaced", async () => {
     restore = stubFetch();
     const { engine } = setup();
     const trackA = { id: "a", src: "/a.flac" };
@@ -149,6 +150,25 @@ describe("subscription contract", () => {
 
     expect(snapshotWith3.queueLength).toBe(3);
     expect(snapshotWith3).not.toBe(snapshotWith2);
+  });
+});
+
+/**
+ * `snapshotsEqual` is what stops `useSyncExternalStore` looping forever, so every field has
+ * to be in it. Driving that through the engine cannot prove a single field is compared:
+ * `setQueue` also flips the state to "loading" in the same tick, so the two snapshots
+ * differ whether or not the field under test is checked. Comparing the pure function
+ * directly is the only way to hold one field still.
+ */
+describe("snapshotsEqual covers every field", () => {
+  it("treats a change of queue length as a change", () => {
+    const a = { ...EMPTY_SNAPSHOT, queueLength: 2 };
+    const b = { ...EMPTY_SNAPSHOT, queueLength: 3 };
+    expect(snapshotsEqual(a, b)).toBe(false);
+  });
+
+  it("still reports two identical snapshots as equal", () => {
+    expect(snapshotsEqual({ ...EMPTY_SNAPSHOT }, { ...EMPTY_SNAPSHOT })).toBe(true);
   });
 });
 
