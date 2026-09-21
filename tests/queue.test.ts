@@ -127,6 +127,38 @@ describe("EkoQueue shuffle", () => {
     expect(q.advance()).not.toBeNull();
   });
 
+  it('a two track shuffled bag keeps refilling under repeat "all"', () => {
+    // Two is the smallest queue where the bag genuinely empties and refills, rather than
+    // being forced empty by excluding the only track there is.
+    const q = make(2);
+    q.shuffle = true;
+    q.repeat = "all";
+    const seen = new Set([q.currentIndex]);
+    for (let i = 0; i < 4; i++) {
+      const next = q.advance();
+      expect(next).not.toBeNull();
+      seen.add(q.currentIndex);
+    }
+    expect(seen).toEqual(new Set([0, 1]));
+  });
+
+  it('a single track loops on itself under shuffle plus repeat "all"', () => {
+    const q = make(1);
+    q.shuffle = true;
+    q.repeat = "all";
+    expect(q.peekNext()?.id).toBe("0");
+    expect(q.advance()?.id).toBe("0");
+    expect(q.peekNext()?.id).toBe("0");
+    expect(q.advance()?.id).toBe("0");
+  });
+
+  it('a single track under shuffle has nowhere to go without repeat "all"', () => {
+    const q = make(1);
+    q.shuffle = true;
+    expect(q.peekNext()).toBeNull();
+    expect(q.advance()).toBeNull();
+  });
+
   it("turning shuffle off returns to sequential order from where it is", () => {
     const q = make(5);
     q.shuffle = true;

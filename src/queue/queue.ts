@@ -72,7 +72,15 @@ export class EkoQueue {
   peekNextIndex(): number {
     if (this.index < 0 || this.tracks.length === 0) return -1;
     if (this._repeat === "one") return this.index;
-    if (this._shuffle) return this.bag[0] ?? -1;
+    if (this._shuffle) {
+      const next = this.bag[0];
+      if (next !== undefined) return next;
+      // The bag reads empty here only for a single track queue: with two or more, advance()
+      // refills it the moment it empties, so peekNextIndex never observes an empty bag. A
+      // lone track under repeat "all" has nowhere to go but back to itself, the same wrap
+      // the sequential branch below already gives it.
+      return this._repeat === "all" && this.tracks.length === 1 ? this.index : -1;
+    }
     const next = this.index + 1;
     if (next < this.tracks.length) return next;
     return this._repeat === "all" ? 0 : -1;
@@ -118,6 +126,9 @@ export class EkoQueue {
    * Jump straight to an index, as a manual skip or a fresh queue position does. This does
    * not extend `previous()` history: a deliberate jump is not "what was actually played"
    * on the way there, so a bare jump leaves `previous()` to fall back to the index below.
+   * That means `previous()` after a manual jump does not undo the jump: history records
+   * what the queue's own advance walked through, not every value the index has held. Same
+   * reason `setTracks` clears history rather than seeding it.
    */
   jumpTo(index: number): EkoTrack | null {
     if (index < 0 || index >= this.tracks.length) return null;
