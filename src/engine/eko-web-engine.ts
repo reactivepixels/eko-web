@@ -30,9 +30,11 @@ const DEFAULTS = {
 };
 
 /**
- * Web Audio playback engine: decode-to-buffer playback through a gain graph
+ * Web Audio playback engine: each track plays through a selectable source strategy
+ * (decode to buffer, or stream via a media element) into a gain graph
  * (`rgGain → fadeGain → userGain → destination`) with ReplayGain-style loudness
- * normalization and true (sample-accurate) gapless track transitions.
+ * normalization. Gapless (sample-accurate) transitions only happen between buffered
+ * tracks; see `source` and `bufferMaxBytes` in `EkoWebEngineOptions`.
  *
  * NOT bit-perfect — see the project README.
  */

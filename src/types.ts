@@ -44,14 +44,21 @@ export interface EkoWebEngineOptions {
    * How tracks reach the graph. `"buffer"` decodes whole files, which is the only path
    * that can be gapless. `"element"` streams, which keeps memory flat at any length but
    * is never sample-accurate and cannot measure loudness. `"auto"` (the default) picks
-   * per track using `bufferMaxBytes`.
+   * per track using `bufferMaxBytes`, and it has a cost: it issues a HEAD request per
+   * track before the GET, so a queue under `"auto"` pays two round trips per track. Set
+   * `source: "buffer"` or `"element"` explicitly to skip that extra request when you
+   * already know your content.
    */
   source?: "auto" | "buffer" | "element";
   /**
    * The `Content-Length` above which `source: "auto"` streams instead of decoding.
    * Default: 50 MB. This is a heuristic, because compressed size predicts decoded size
-   * badly for lossy formats, and it fails safe: guessing high costs sample-accuracy, not
-   * the tab.
+   * badly for lossy formats, and the two branches fail in different directions: an
+   * oversized file falls back to streaming, so it loses sample-accuracy, while an
+   * unknown size (a server that will not answer HEAD, or omits `Content-Length`) falls
+   * back to buffering, so it gets no memory protection at all, on top of the wasted
+   * HEAD. Set `source: "element"` explicitly for known-long content behind a server
+   * like that.
    */
   bufferMaxBytes?: number;
 }
