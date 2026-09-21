@@ -9,7 +9,9 @@ public, the tag, the publish, and the registry listing, is the maintainer's.
 - [ ] `main` is green: `npm run typecheck && npm run format:check && npx vitest run && npm run build`
 - [ ] Working tree is clean and `main` is pushed.
 - [ ] `git log --all --format=%B | grep -i claude` returns nothing.
-- [ ] No em or en dashes in tracked files: `git ls-files -z | xargs -0 grep -l '—\|–'` returns nothing.
+- [ ] No em or en dashes in tracked files (the command matches them by codepoint, so this
+      line does not trip its own check):
+      `git ls-files -z | xargs -0 perl -ne 'print "$ARGV\n" and close ARGV if /[\x{2014}\x{2013}]/'`
 
 ## Ear test
 
