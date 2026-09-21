@@ -332,15 +332,34 @@ describe("EkoWebEngine element start failure", () => {
 });
 
 describe("EkoWebEngine config", () => {
-  it("reports the resolved transition, not the raw gapless option, when they would disagree", () => {
-    // The older `gapless: false` option and the newer `transition` option must resolve to
-    // the same reported state; `config` must reflect the resolved policy either way.
-    const { engine: byGapless } = makeEngine(undefined, { gapless: false });
-    expect(byGapless.config.transition).toBe("gap");
-    expect(byGapless.config.gapless).toBe(false);
+  it("reports every resolved option, defaults included, not just a partial set", () => {
+    const { engine } = makeEngine(undefined, { transition: "gap" });
+    expect(engine.config).toEqual({
+      normalize: true,
+      targetLufs: -16,
+      transition: "gap",
+      fadeSeconds: 0.01,
+      source: "auto",
+      bufferMaxBytes: 50 * 1024 * 1024,
+    });
+  });
 
-    const { engine: byTransition } = makeEngine(undefined, { transition: "gap" });
-    expect(byTransition.config.transition).toBe("gap");
-    expect(byTransition.config.gapless).toBe(false);
+  it("reflects a fully custom set of options, not just the defaults", () => {
+    const { engine } = makeEngine(undefined, {
+      normalize: false,
+      targetLufs: -14,
+      transition: "gap",
+      fadeSeconds: 0.05,
+      source: "element",
+      bufferMaxBytes: 1024,
+    });
+    expect(engine.config).toEqual({
+      normalize: false,
+      targetLufs: -14,
+      transition: "gap",
+      fadeSeconds: 0.05,
+      source: "element",
+      bufferMaxBytes: 1024,
+    });
   });
 });

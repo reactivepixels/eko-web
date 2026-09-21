@@ -25,7 +25,6 @@ interface ArmedTrack {
 const DEFAULTS = {
   normalize: true,
   targetLufs: -16,
-  gapless: true,
   transition: "gapless" as TransitionKind,
   fadeSeconds: DEFAULT_FADE_SECONDS,
   source: "auto" as const,
@@ -97,9 +96,7 @@ export class EkoWebEngine {
   constructor(options: EkoWebEngineOptions = {}) {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
-    // `gapless: false` is the older spelling of `transition: "gap"`.
-    this.transition =
-      options.transition ?? (options.gapless === false ? "gap" : DEFAULTS.transition);
+    this.transition = options.transition ?? DEFAULTS.transition;
     this.fadeSeconds = options.fadeSeconds ?? DEFAULTS.fadeSeconds;
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
@@ -162,18 +159,23 @@ export class EkoWebEngine {
   get muted(): boolean {
     return this._muted;
   }
-  /** The engine's resolved options. `gapless` and `transition` always agree with each other. */
+  /** The engine's fully resolved options, defaults included, so a consumer never has to
+   * guess what actually applied. */
   get config(): {
     normalize: boolean;
     targetLufs: number;
-    gapless: boolean;
     transition: TransitionKind;
+    fadeSeconds: number;
+    source: "auto" | "buffer" | "element";
+    bufferMaxBytes: number;
   } {
     return {
       normalize: this.normalize,
       targetLufs: this.targetLufs,
-      gapless: this.transition === "gapless",
       transition: this.transition,
+      fadeSeconds: this.fadeSeconds,
+      source: this.sourcePreference,
+      bufferMaxBytes: this.bufferMaxBytes,
     };
   }
   get duration(): number {

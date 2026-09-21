@@ -38,8 +38,6 @@ export interface EkoWebEngineOptions {
   normalize?: boolean;
   /** Target integrated loudness (LUFS) for normalization. Default: `-16`. */
   targetLufs?: number;
-  /** Gapless transitions between queued tracks. Default: `true`. */
-  gapless?: boolean;
   /** Boundary policy between queued tracks. Default: `"gapless"`. */
   transition?: TransitionKind;
   /**
@@ -87,7 +85,6 @@ export interface EkoEventMap {
   play: void;
   pause: void;
   timeupdate: { currentTime: number; duration: number };
-  progress: { bufferedEnd: number };
   ended: void;
   /** Fires AFTER a track boundary. The UI advances on this, not on a `src` swap. */
   trackchange: {

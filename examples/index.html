@@ -181,7 +181,7 @@
 
       function rebuild() {
         engine?.destroy();
-        engine = new EkoWebEngine({ normalize: normalize.checked, gapless: true });
+        engine = new EkoWebEngine({ normalize: normalize.checked, transition: "gapless" });
         engine.on("trackchange", ({ index }) => render(`▶ advanced to track ${index} (gapless)`));
         engine.on("ended", () => render("■ ended"));
         engine.on("timeupdate", ({ currentTime, duration }) => {
@@ -202,7 +202,7 @@
           e
             ? `state: ${e.state}   track: ${e.currentIndex}   ${e.currentTime.toFixed(2)}s / ${e.duration.toFixed(2)}s`
             : "",
-          e ? `normalize: ${e.config.normalize}   gapless: ${e.config.gapless}` : "",
+          e ? `normalize: ${e.config.normalize}   transition: ${e.config.transition}` : "",
         ]
           .filter(Boolean)
           .join("\n");

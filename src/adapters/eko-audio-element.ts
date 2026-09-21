@@ -159,7 +159,6 @@ export class EkoAudioElement {
     this.engine.on("play", () => this.dispatch("play"));
     this.engine.on("pause", () => this.dispatch("pause"));
     this.engine.on("timeupdate", () => this.dispatch("timeupdate"));
-    this.engine.on("progress", () => this.dispatch("progress"));
     this.engine.on("ended", () => this.dispatch("ended"));
     this.engine.on("volumechange", () => this.dispatch("volumechange"));
     this.engine.on("error", () => this.dispatch("error"));
