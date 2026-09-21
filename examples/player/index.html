@@ -87,6 +87,30 @@
       <dd id="errors">none</dd>
     </dl>
 
+    <script>
+      // Classic script, so it runs even when the module below fails to load. If the module never
+      // reports in, say so: a silent dead page is the worst possible debug harness.
+      window.__ekoBooted = false;
+      window.addEventListener("error", function (event) {
+        var hint = document.getElementById("hint");
+        if (hint && event.message) hint.textContent = "Page error: " + event.message;
+      });
+      setTimeout(function () {
+        if (window.__ekoBooted) return;
+        var hint = document.getElementById("hint");
+        if (!hint) return;
+        hint.innerHTML =
+          "<b>The page script never started, so nothing on this page works.</b> " +
+          "Almost always one of two things. Either this page was opened straight from disk " +
+          "over file://, which blocks ES module imports: serve it over http instead. " +
+          "Or the server is not rooted at the repo, so <code>../../dist/index.js</code> does " +
+          "not resolve: run <code>npm run build</code>, serve the repo root, and open " +
+          "<code>/examples/player/</code> from there. Open the browser console for the exact " +
+          "error.";
+        hint.style.color = "#b00";
+      }, 1500);
+    </script>
+
     <script type="module">
       import { EkoWebEngine, linearToDb } from "../../dist/index.js";
 
@@ -242,6 +266,7 @@
 
       rebuild();
       requestAnimationFrame(frame);
+      window.__ekoBooted = true;
     </script>
   </body>
 </html>
