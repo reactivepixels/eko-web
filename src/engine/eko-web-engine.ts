@@ -27,6 +27,7 @@ const DEFAULTS = {
   normalize: true,
   targetLufs: -16,
   transition: "gapless" as TransitionKind,
+  crossfadeSeconds: 3,
   fadeSeconds: DEFAULT_FADE_SECONDS,
   source: "auto" as const,
   bufferMaxBytes: 50 * 1024 * 1024,
@@ -46,6 +47,7 @@ export class EkoWebEngine {
   private readonly normalize: boolean;
   private readonly targetLufs: number;
   private readonly transition: TransitionKind;
+  private readonly crossfadeSeconds: number;
   private _lastTransition: TransitionKind | null = null;
   private readonly fadeSeconds: number;
   private readonly sourcePreference: "auto" | "buffer" | "element";
@@ -98,6 +100,7 @@ export class EkoWebEngine {
     this.normalize = options.normalize ?? DEFAULTS.normalize;
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
     this.transition = options.transition ?? DEFAULTS.transition;
+    this.crossfadeSeconds = options.crossfadeSeconds ?? DEFAULTS.crossfadeSeconds;
     this.fadeSeconds = options.fadeSeconds ?? DEFAULTS.fadeSeconds;
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
@@ -170,6 +173,7 @@ export class EkoWebEngine {
     normalize: boolean;
     targetLufs: number;
     transition: TransitionKind;
+    crossfadeSeconds: number;
     fadeSeconds: number;
     source: "auto" | "buffer" | "element";
     bufferMaxBytes: number;
@@ -178,6 +182,7 @@ export class EkoWebEngine {
       normalize: this.normalize,
       targetLufs: this.targetLufs,
       transition: this.transition,
+      crossfadeSeconds: this.crossfadeSeconds,
       fadeSeconds: this.fadeSeconds,
       source: this.sourcePreference,
       bufferMaxBytes: this.bufferMaxBytes,
@@ -624,12 +629,16 @@ export class EkoWebEngine {
     }
   }
 
-  // ── Gapless internals ─────────────────────────────────────────────────────────
-  /** Decode the next queued track and schedule it to start the instant this one ends. */
+  // ── Gapless / crossfade internals ───────────────────────────────────────────────
+  /**
+   * Decode the next queued track and schedule it against this one's boundary. Under
+   * `"gapless"` it starts the instant this one ends; under `"crossfade"` it starts early,
+   * overlapping the tail of this one, with both sides ramping across the overlap.
+   */
   private async armNext(): Promise<void> {
-    if (this.transition !== "gapless" || this._paused || !this.current || !this.ctx) return;
+    if (this.transition === "gap" || this._paused || !this.current || !this.ctx) return;
     // A streaming source cannot be scheduled to a sample, so this boundary cannot be
-    // gapless no matter what the next track is.
+    // gapless or crossfade no matter what the next track is.
     if (!this.current.canGapless) return;
     const nextIndex = this.tracks.peekNextIndex();
     if (nextIndex < 0 || this.armed) return;
@@ -638,6 +647,13 @@ export class EkoWebEngine {
 
     // The boundary is fixed once the current source started (start time + offset).
     const endCtxTime = trackEndTime(this.startCtxTime, this.current.duration, this.startOffset);
+    // Crossfade overlaps, gapless abuts. Clamp the overlap to what is actually left of the
+    // outgoing track, so a long crossfade on a short (or already part-played) track cannot
+    // schedule a start in the past.
+    const remaining = Math.max(0, endCtxTime - this.ctx.currentTime);
+    const overlap =
+      this.transition === "crossfade" ? Math.min(this.crossfadeSeconds, remaining) : 0;
+    const startAt = endCtxTime - overlap;
 
     let next: LoadedSource;
     try {
@@ -658,17 +674,35 @@ export class EkoWebEngine {
       return;
     }
     if (!next.canGapless) {
-      // The incoming track streams, so it cannot start on a sample. Fall back to a gap.
+      // The incoming track streams, so it cannot start on a sample. Fall back to a gap,
+      // for gapless and crossfade alike: crossfade needs both sides sample-accurate.
       next.dispose();
       return;
     }
 
     next.connect(this.graph!.input);
     next.onEnded(() => this.handleSourceEnded());
-    next.start(endCtxTime, 0);
-    // No boundary-jump scheduling needed: `next` already carries its own normalization
-    // gain from connect(), so the level changes over at exactly the boundary for free.
-    this.armed = { loaded: next, index: nextIndex, startCtxTime: endCtxTime };
+    next.start(startAt, 0);
+    if (overlap > 0) {
+      // Both sides ramp across the overlap: the outgoing track down to silence, the
+      // incoming one up to its OWN normGain, not to 1, or normalization would be undone
+      // for the incoming track at exactly the moment both are audible.
+      const outgoing = this.current.gain;
+      const incoming = next.gain;
+      if (outgoing) {
+        outgoing.gain.cancelScheduledValues(startAt);
+        outgoing.gain.setValueAtTime(this.current.normGain, startAt);
+        outgoing.gain.linearRampToValueAtTime(0, endCtxTime);
+      }
+      if (incoming) {
+        incoming.gain.cancelScheduledValues(startAt);
+        incoming.gain.setValueAtTime(0, startAt);
+        incoming.gain.linearRampToValueAtTime(next.normGain, endCtxTime);
+      }
+    }
+    // With no overlap (gapless), `next` already carries its own normalization gain from
+    // connect(), so the level changes over at exactly the boundary for free.
+    this.armed = { loaded: next, index: nextIndex, startCtxTime: startAt };
   }
 
   /** A source reached its natural end. Promote the armed track, advance with a gap, or stop. */
@@ -683,13 +717,13 @@ export class EkoWebEngine {
       this.tracks.advance();
       this.startCtxTime = armed.startCtxTime;
       this.startOffset = 0;
-      this._lastTransition = "gapless";
+      this._lastTransition = this.transition === "crossfade" ? "crossfade" : "gapless";
       this.publish();
       this.emitter.emit("durationchange", { duration: armed.loaded.duration });
       this.emitter.emit("trackchange", {
         index: armed.index,
         track: armed.loaded.track,
-        transition: "gapless",
+        transition: this._lastTransition,
       });
       void this.armNext();
     } else {

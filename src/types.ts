@@ -5,11 +5,14 @@ import type { RepeatMode } from "./queue/queue";
  * What actually happened at a track boundary.
  *
  * `"gapless"` means the next source was scheduled on the exact sample the previous one
- * ended. `"gap"` means it was not, either because the policy asked for a gap, because one
- * side of the boundary was a streaming source that cannot be scheduled, or because the
- * prefetch failed. The engine reports this rather than degrading silently.
+ * ended, abutting with no overlap. `"crossfade"` means the next source started early and
+ * overlapped the outgoing one, each ramping across its own gain. `"gap"` means neither
+ * happened, either because the policy asked for a gap, because one side of the boundary
+ * was a streaming source that cannot be scheduled to a sample (which both `"gapless"` and
+ * `"crossfade"` require), or because the prefetch failed. The engine reports this rather
+ * than degrading silently.
  */
-export type TransitionKind = "gapless" | "gap";
+export type TransitionKind = "gapless" | "crossfade" | "gap";
 
 /** A track in the engine's queue. */
 export interface EkoTrack {
@@ -41,6 +44,12 @@ export interface EkoWebEngineOptions {
   targetLufs?: number;
   /** Boundary policy between queued tracks. Default: `"gapless"`. */
   transition?: TransitionKind;
+  /**
+   * Seconds of overlap when `transition` is `"crossfade"`. Ignored otherwise. Default: `3`.
+   * The overlap is taken from the end of the outgoing track, so a value longer than the
+   * track is clamped to its remaining length.
+   */
+  crossfadeSeconds?: number;
   /**
    * Inject an AudioContext (a shared app context, or a mock in tests). When omitted, one is
    * created lazily on first `play()` (so it's tied to a user gesture per autoplay policy).
