@@ -76,10 +76,18 @@ export class EkoQueue {
     this._repeat = mode;
   }
 
-  /** The index that follows the current one, or -1 when nothing does. Never mutates. */
-  peekNextIndex(): number {
+  /**
+   * The index that follows the current one, or -1 when nothing does. Never mutates.
+   *
+   * `ignoreRepeatOne`, when true, answers as if repeat were not "one": the real next track
+   * in sequence or in the bag, rather than the current track looping on itself. A manual
+   * "next" press wants that answer even under repeat "one" (looping is a boundary
+   * behaviour, not something the Next button should do); the automatic boundary itself
+   * still wants the default.
+   */
+  peekNextIndex(ignoreRepeatOne = false): number {
     if (this.index < 0 || this.tracks.length === 0) return -1;
-    if (this._repeat === "one") return this.index;
+    if (this._repeat === "one" && !ignoreRepeatOne) return this.index;
     if (this._shuffle) {
       const next = this.bag[0];
       if (next !== undefined) return next;
@@ -99,12 +107,17 @@ export class EkoQueue {
     return next < 0 ? null : (this.tracks[next] ?? null);
   }
 
-  /** Move to the next track and return it, or null when the queue is finished. */
-  advance(): EkoTrack | null {
-    const next = this.peekNextIndex();
+  /** Move to the next track and return it, or null when the queue is finished. See
+   * `peekNextIndex` for what `ignoreRepeatOne` means; a manual next() passes true. */
+  advance(ignoreRepeatOne = false): EkoTrack | null {
+    const next = this.peekNextIndex(ignoreRepeatOne);
     if (next < 0) return null;
     if (next !== this.index) this.history.push(this.index);
-    if (this._shuffle && this._repeat !== "one") {
+    // Looping on the current track under repeat "one" must not touch the bag: nothing was
+    // actually drawn. Ignoring repeat "one" (a manual next()) means a real draw happened
+    // even though repeat is "one", so it shifts the bag same as any other advance.
+    const loopedOnRepeatOne = this._repeat === "one" && !ignoreRepeatOne;
+    if (this._shuffle && !loopedOnRepeatOne) {
       this.bag.shift();
       // Refill the moment it empties, so peekNextIndex never has to.
       if (this.bag.length === 0 && this._repeat === "all") this.refillBag(next);

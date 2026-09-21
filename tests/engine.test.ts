@@ -217,6 +217,25 @@ describe("EkoWebEngine error codes", () => {
     expect(engine.currentIndex).toBe(0);
   });
 
+  it('next() under repeat "one" advances to the following track instead of restarting the current one', async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    engine.setRepeat("one");
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+    ]);
+    await ready;
+    expect(engine.currentIndex).toBe(0);
+
+    const readyB = whenReady(engine);
+    engine.next();
+    await readyB;
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.getSnapshot().track?.id).toBe("b");
+  });
+
   it("emits autoplay_blocked when resume rejects, without rejecting play()", async () => {
     restoreFetch = stubFetch();
     const { ctx, engine } = makeEngine();

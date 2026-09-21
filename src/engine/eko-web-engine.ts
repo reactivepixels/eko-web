@@ -476,13 +476,20 @@ export class EkoWebEngine {
     this.emitter.emit("timeupdate", { currentTime: t, duration: this.current.duration });
   }
 
-  /** Skip to the next track (manual, so a small decode gap is acceptable here). */
+  /**
+   * Skip to the next track (manual, so a small decode gap is acceptable here).
+   *
+   * Ignores repeat "one": that mode makes the automatic boundary loop the current track,
+   * but a manual Next press means advance regardless, the same way every mainstream player
+   * treats it. `previous()` never had this problem (it goes through `stepBack()`, which
+   * repeat does not touch at all), so this is what makes the two buttons symmetrical.
+   */
   next(): void {
     this.assertNotDestroyed();
-    const target = this.tracks.peekNextIndex();
+    const target = this.tracks.peekNextIndex(true);
     if (target < 0) return;
     const from = this.tracks.currentIndex;
-    this.tracks.advance();
+    this.tracks.advance(true);
     void this.skipTo(target, from);
   }
 

@@ -75,6 +75,22 @@ describe("EkoQueue repeat", () => {
     q.jumpTo(1);
     expect(q.peekNext()).toBeNull();
   });
+
+  it('peekNextIndex(true) ignores repeat "one" and reports the real next index', () => {
+    const q = make(3);
+    q.repeat = "one";
+    q.jumpTo(1);
+    expect(q.peekNextIndex()).toBe(1); // the boundary: loops on itself
+    expect(q.peekNextIndex(true)).toBe(2); // manual Next: the real next track
+  });
+
+  it('advance(true) under repeat "one" moves forward instead of looping', () => {
+    const q = make(3);
+    q.repeat = "one";
+    q.jumpTo(1);
+    expect(q.advance(true)?.id).toBe("2");
+    expect(q.currentIndex).toBe(2);
+  });
 });
 
 describe("EkoQueue shuffle", () => {
