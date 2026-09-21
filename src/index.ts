@@ -36,3 +36,6 @@ export type {
   LoadedSource,
   AudioSourceStrategy,
 } from "./engine/sources/source";
+
+export { EkoQueue } from "./queue/queue";
+export type { RepeatMode } from "./queue/queue";
