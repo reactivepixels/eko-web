@@ -143,6 +143,7 @@ export class EkoWebEngine {
       state: this._state,
       paused: this._paused,
       index: this.tracks.currentIndex,
+      queueLength: this.tracks.length,
       track: this.current?.track ?? this.tracks.current ?? null,
       duration: this.current?.duration ?? 0,
       volume: this._volume,

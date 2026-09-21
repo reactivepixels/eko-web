@@ -99,6 +99,37 @@ describe("subscription contract", () => {
     expect(engine.getSnapshot()).toBe(before);
     expect(before).not.toHaveProperty("currentTime");
   });
+
+  it("reports queue length in the snapshot", async () => {
+    restore = stubFetch();
+    const { engine } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+      { id: "c", src: "/c.flac" },
+    ]);
+    await ready;
+    expect(engine.getSnapshot().queueLength).toBe(3);
+  });
+
+  it("updates queue length when the queue changes", async () => {
+    restore = stubFetch();
+    const { engine } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+      { id: "c", src: "/c.flac" },
+    ]);
+    await ready;
+    expect(engine.getSnapshot().queueLength).toBe(3);
+    engine.setQueue([
+      { id: "x", src: "/x.flac" },
+      { id: "y", src: "/y.flac" },
+    ]);
+    expect(engine.getSnapshot().queueLength).toBe(2);
+  });
 });
 
 describe("snapshot: shuffle and repeat", () => {

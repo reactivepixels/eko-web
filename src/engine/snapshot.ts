@@ -13,6 +13,8 @@ export interface EkoSnapshot {
   readonly state: EkoState;
   readonly paused: boolean;
   readonly index: number;
+  /** How many tracks are in the queue. */
+  readonly queueLength: number;
   readonly track: EkoTrack | null;
   readonly duration: number;
   readonly volume: number;
@@ -29,6 +31,7 @@ export const EMPTY_SNAPSHOT: EkoSnapshot = Object.freeze({
   state: "idle",
   paused: true,
   index: -1,
+  queueLength: 0,
   track: null,
   duration: 0,
   volume: 1,
@@ -48,6 +51,7 @@ export function snapshotsEqual(a: EkoSnapshot, b: EkoSnapshot): boolean {
     a.state === b.state &&
     a.paused === b.paused &&
     a.index === b.index &&
+    a.queueLength === b.queueLength &&
     a.track === b.track &&
     a.duration === b.duration &&
     a.volume === b.volume &&

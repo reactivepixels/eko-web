@@ -194,7 +194,7 @@
             ? `${linearToDb(engine.normGain).toFixed(2)} dB applied`
             : "-";
           $("queue-position").textContent = snapshot.track
-            ? `${snapshot.index + 1} / ${snapshot.track?.queueLength ?? 1}`
+            ? `${snapshot.index + 1} / ${snapshot.queueLength}`
             : "-";
         });
 
