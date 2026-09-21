@@ -4,11 +4,11 @@
  * Integrated loudness is measured per ITU-R BS.1770 "K-weighting" (the basis of LUFS and
  * ReplayGain 2.0): a high-shelf + a high-pass biquad approximating the ear's frequency
  * response, then mean-square energy. The K-weighting filters are realised with standard
- * RBJ ("Audio EQ Cookbook") biquads so the coefficients are correct at ANY sample rate —
+ * RBJ ("Audio EQ Cookbook") biquads so the coefficients are correct at ANY sample rate,
  * not just the 48 kHz the spec tabulates.
  *
  * NOTE: this measures *loudness* for the purpose of evening out track-to-track volume.
- * It does NOT change fidelity — see the project README. We use simple (ungated) integrated
+ * It does NOT change fidelity. See the project README. We use simple (ungated) integrated
  * loudness; gating + true-peak oversampling can be added later without changing callers.
  */
 
@@ -129,7 +129,7 @@ export function linearToDb(linear: number): number {
 
 /**
  * The linear gain to reach `targetLufs`, CLAMPED so the loudest sample can't exceed full
- * scale (`peak * gain <= 1`) — normalization that never introduces clipping. Silence (or a
+ * scale (`peak * gain <= 1`), so normalization never introduces clipping. Silence (or a
  * missing measurement) returns unity.
  */
 export function computeNormalizationGain(

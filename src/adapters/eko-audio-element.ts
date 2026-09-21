@@ -1,7 +1,7 @@
 import { EkoWebEngine } from "../engine/eko-web-engine";
 import type { EkoWebEngineOptions, EkoTrack } from "../types";
 
-/** A DOM-ish event object — enough for media-player consumers (they read off `target`). */
+/** A DOM-ish event object, enough for media-player consumers (they read off `target`). */
 interface FacadeEvent {
   type: string;
   target: EkoAudioElement;
@@ -10,7 +10,7 @@ type Listener = (event: FacadeEvent) => void;
 
 /**
  * An `HTMLMediaElement`-compatible facade over {@link EkoWebEngine}, so eko-web drops into
- * players that drive an `<audio>` element (e.g. via a `mediaRef`) with **no fork** — you
+ * players that drive an `<audio>` element (e.g. via a `mediaRef`) with **no fork**, so you
  * get loudness normalization immediately. Cast it to `HTMLAudioElement` at the boundary:
  *
  * ```ts
@@ -22,7 +22,7 @@ type Listener = (event: FacadeEvent) => void;
  * player's own playlist `src`-swap reloads the element and defeats gapless).
  */
 export class EkoAudioElement {
-  /** The underlying engine — use `el.engine.setQueue(...)` for gapless. */
+  /** The underlying engine. Use `el.engine.setQueue(...)` for gapless. */
   readonly engine: EkoWebEngine;
 
   // Stored for surface compatibility; not all are acted on in v1.

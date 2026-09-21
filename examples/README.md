@@ -37,7 +37,7 @@ masters.
 ## Using it from a `<audio>`-based player (e.g. gyro-media-player)
 
 The `EkoAudioElement` facade quacks like an `HTMLAudioElement`, so it slots into a player
-that drives a `mediaRef` — single-track playback + loudness normalization with no fork:
+that drives a `mediaRef`, giving you single-track playback + loudness normalization with no fork:
 
 ```tsx
 import { useMediaPlayer } from "gyro-media-player";

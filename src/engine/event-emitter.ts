@@ -1,11 +1,11 @@
 import type { EkoEventMap, EkoEventName, EkoEventListener } from "../types";
 
-/** Whether an event's payload type is `void` — used to make `emit` variadic. */
+/** Whether an event's payload type is `void`, used to make `emit` variadic. */
 type EmitArgs<E extends EkoEventName> = EkoEventMap[E] extends void
   ? [payload?: undefined]
   : [payload: EkoEventMap[E]];
 
-/** Minimal typed event emitter — no dependencies. */
+/** Minimal typed event emitter, no dependencies. */
 export class Emitter {
   private listeners = new Map<EkoEventName, Set<(payload: never) => void>>();
 

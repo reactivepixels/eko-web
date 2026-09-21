@@ -1,7 +1,7 @@
 {
   "name": "@rpxl/eko-web",
   "version": "0.1.0",
-  "description": "EKO's web playback engine — gapless + loudness-normalized Web Audio. The web-grade sibling of the native EKO player. (Not bit-perfect — that's a browser limit, not a goal.)",
+  "description": "EKO's web playback engine: gapless + loudness-normalized Web Audio. The web-grade sibling of the native EKO player. (Not bit-perfect: that's a browser limit, not a goal.)",
   "type": "module",
   "license": "MIT",
   "author": "Rod Leviton",

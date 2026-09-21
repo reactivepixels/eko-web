@@ -14,7 +14,7 @@ export type TransitionKind = "gapless" | "gap";
 export interface EkoTrack {
   /** Stable id for the consumer (optional). */
   id?: string;
-  /** Audio URL — anything the browser can `fetch()` + `decodeAudioData()`. */
+  /** Audio URL: anything the browser can `fetch()` + `decodeAudioData()`. */
   src: string;
   /**
    * Optional precomputed normalization gain in dB (e.g. a ReplayGain track-gain tag).
@@ -74,7 +74,7 @@ export interface EkoWebEngineOptions {
 }
 
 /**
- * Event payloads. A `void` payload means the event carries no data — listeners receive
+ * Event payloads. A `void` payload means the event carries no data, so listeners receive
  * `undefined` and you may `emit(name)` with no second argument.
  */
 export interface EkoEventMap {

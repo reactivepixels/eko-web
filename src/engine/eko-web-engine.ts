@@ -38,7 +38,7 @@ const DEFAULTS = {
  * normalization. Gapless (sample-accurate) transitions only happen between buffered
  * tracks; see `source` and `bufferMaxBytes` in `EkoWebEngineOptions`.
  *
- * NOT bit-perfect — see the project README.
+ * NOT bit-perfect. See the project README.
  */
 export class EkoWebEngine {
   private emitter = new Emitter();
@@ -393,7 +393,7 @@ export class EkoWebEngine {
     this.emitter.emit("timeupdate", { currentTime: t, duration: this.current.duration });
   }
 
-  /** Skip to the next track (manual — a small decode gap is acceptable here). */
+  /** Skip to the next track (manual, so a small decode gap is acceptable here). */
   next(): void {
     this.assertNotDestroyed();
     if (this.index + 1 < this.queue.length) void this.skipTo(this.index + 1);

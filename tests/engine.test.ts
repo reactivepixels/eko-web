@@ -27,7 +27,7 @@ afterEach(() => {
   restoreFetch = null;
 });
 
-describe("EkoWebEngine — load", () => {
+describe("EkoWebEngine load", () => {
   it("decodes a queued track and reaches the ready state", async () => {
     restoreFetch = stubFetch();
     const { engine } = makeEngine();
@@ -54,7 +54,7 @@ describe("EkoWebEngine — load", () => {
   });
 });
 
-describe("EkoWebEngine — normalization", () => {
+describe("EkoWebEngine normalization", () => {
   it("applies the clamp-to-peak normalization gain to rgGain on play", async () => {
     restoreFetch = stubFetch();
     const buffer = makeToneBuffer(0.5);
@@ -86,7 +86,7 @@ describe("EkoWebEngine — normalization", () => {
   });
 });
 
-describe("EkoWebEngine — transport", () => {
+describe("EkoWebEngine transport", () => {
   it("play → playing, pause → paused with the position preserved", async () => {
     restoreFetch = stubFetch();
     const { ctx, engine } = makeEngine();
