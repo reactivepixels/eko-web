@@ -185,6 +185,10 @@ export class EkoWebEngine {
     const t = this.startOffset + (this.ctx.currentTime - this.startCtxTime);
     return Math.max(0, Math.min(t, this.current.duration));
   }
+  /** The linear normalization gain applied to the current track (1 = none). */
+  get normGain(): number {
+    return this.current?.normGain ?? 1;
+  }
 
   // ── Queue / load ────────────────────────────────────────────────────────────
   setQueue(tracks: EkoTrack[]): void {

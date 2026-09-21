@@ -1,5 +1,21 @@
 # eko-web examples
 
+## Harness (`player/`)
+
+The ear-test harness, and the page that becomes the marketing player later. Build the
+library, serve the repo root, and open `examples/player/`:
+
+```bash
+npm run build
+npx serve .
+# then open http://localhost:3000/examples/player/
+```
+
+Pick a short loop, press play, and listen at the seam where it repeats. Untick **gapless**
+and listen again: the silence you hear is what a plain `<audio>` element does at every
+track boundary. The **shelf** checkbox proves the user insert point by putting a real
+biquad into the chain, and the spectrum is drawn from the engine's analyser tap.
+
 ## Vanilla demo (`index.html`)
 
 A no-build page to ear-test gapless + normalization with your own files.

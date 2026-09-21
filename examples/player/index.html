@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>eko-web harness</title>
+    <style>
+      body {
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        max-width: 46rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      canvas {
+        width: 100%;
+        height: 120px;
+        background: #111;
+        display: block;
+      }
+      .row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        margin: 0.75rem 0;
+        flex-wrap: wrap;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.25rem 1rem;
+        margin: 0;
+      }
+      dt {
+        color: #666;
+      }
+      dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      code {
+        background: #f2f2f2;
+        padding: 0.1rem 0.3rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>eko-web harness</h1>
+    <p>
+      Pick a short loop, press play, and listen at the seam. Untick gapless to hear the gap appear.
+      Build first with <code>npm run build</code>, then serve the repo root.
+    </p>
+
+    <div class="row">
+      <input type="file" id="file" accept="audio/*" />
+      <button id="play" disabled>Play</button>
+      <label><input type="checkbox" id="gapless" checked /> gapless</label>
+      <label><input type="checkbox" id="eq" /> +6 dB shelf at 4 kHz (proves inserts)</label>
+    </div>
+
+    <canvas id="spectrum"></canvas>
+
+    <dl>
+      <dt>state</dt>
+      <dd id="state">idle</dd>
+      <dt>source</dt>
+      <dd id="source">-</dd>
+      <dt>normalize</dt>
+      <dd id="normalize">-</dd>
+      <dt>transition</dt>
+      <dd id="transition">-</dd>
+      <dt>time</dt>
+      <dd id="time">0.00 / 0.00</dd>
+      <dt>errors</dt>
+      <dd id="errors">none</dd>
+    </dl>
+
+    <script type="module">
+      import { EkoWebEngine, linearToDb } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+
+      let engine = null;
+      let shelf = null;
+      let analyser = null;
+      let bins = null;
+      let currentFile = null;
+      let objectUrl = null;
+
+      /**
+       * The boundary policy is a construction-time option, so flipping the A/B rebuilds the
+       * engine. Same file, same graph, same EQ: the transition is the only variable.
+       */
+      function rebuild() {
+        engine?.destroy();
+        engine = new EkoWebEngine({
+          normalize: true,
+          transition: $("gapless").checked ? "gapless" : "gap",
+        });
+        wire();
+        if (currentFile) loadFile(currentFile);
+      }
+
+      function wire() {
+        engine.on("error", ({ error }) => {
+          $("errors").textContent = `${error.code}: ${error.message}`;
+        });
+
+        engine.subscribe(() => {
+          const snapshot = engine.getSnapshot();
+          $("state").textContent = snapshot.state;
+          $("source").textContent = snapshot.sourceKind ?? "-";
+          $("transition").textContent = snapshot.lastTransition ?? "-";
+          $("play").textContent = snapshot.paused ? "Play" : "Pause";
+          $("normalize").textContent = snapshot.track
+            ? `${linearToDb(engine.normGain).toFixed(2)} dB applied`
+            : "-";
+        });
+
+        // The insert point, proven with a real biquad rather than a claim.
+        shelf = engine.context.createBiquadFilter();
+        shelf.type = "highshelf";
+        shelf.frequency.value = 4000;
+        shelf.gain.value = 6;
+        if ($("eq").checked) engine.setInserts([shelf]);
+
+        analyser = engine.analyser;
+        analyser.fftSize = 2048;
+        bins = new Uint8Array(analyser.frequencyBinCount);
+      }
+
+      /** Queue the same file twice, so the loop seam is a real track boundary. */
+      function loadFile(file) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = URL.createObjectURL(file);
+        engine.setQueue([
+          { id: "a", src: objectUrl },
+          { id: "b", src: objectUrl },
+        ]);
+        $("play").disabled = false;
+      }
+
+      $("file").addEventListener("change", (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        currentFile = file;
+        loadFile(file);
+      });
+
+      $("play").addEventListener("click", async () => {
+        if (engine.paused) await engine.play();
+        else engine.pause();
+      });
+
+      $("gapless").addEventListener("change", rebuild);
+
+      $("eq").addEventListener("change", (event) => {
+        engine.setInserts(event.target.checked ? [shelf] : []);
+      });
+
+      const canvas = $("spectrum");
+      const ctx2d = canvas.getContext("2d");
+
+      function frame() {
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+        ctx2d.fillStyle = "#111";
+        ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (analyser && bins) {
+          analyser.getByteFrequencyData(bins);
+          ctx2d.fillStyle = "#ef6a1e";
+          const width = canvas.width / bins.length;
+          for (let i = 0; i < bins.length; i++) {
+            const height = (bins[i] / 255) * canvas.height;
+            ctx2d.fillRect(i * width, canvas.height - height, width, height);
+          }
+        }
+
+        // Time is read on the frame loop, never from the snapshot. That split is the whole
+        // reason currentTime is not a snapshot field.
+        if (engine) {
+          $("time").textContent =
+            `${engine.currentTime.toFixed(2)} / ${engine.duration.toFixed(2)}`;
+        }
+        requestAnimationFrame(frame);
+      }
+
+      rebuild();
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
