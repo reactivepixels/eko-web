@@ -367,4 +367,119 @@ describe("other transport calls during a gap-advance", () => {
     expect(ctx.gains.length).toBe(3);
     expect(engine.state).not.toBe("playing");
   });
+
+  it("a pause requested during a superseded advance does not suppress a later, unrelated advance's resume", async () => {
+    restore = stubFetch();
+    const { ctx, engine } = setup({ transition: "gap" });
+    const firstTracks = [
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+    ];
+    const ready = whenReady(engine);
+    engine.setQueue(firstTracks);
+    await ready;
+    await engine.play();
+    await flush();
+
+    // Track A ends: an advance starts loading track B in the background. The consumer
+    // pauses during that load (the flag this test is about gets set here), then replaces
+    // the whole queue before the advance's load ever settles, superseding it without
+    // letting it finish or resume anything itself.
+    ctx.sources[0]!.fireEnded();
+    engine.pause();
+
+    const secondTracks = [
+      { id: "c", src: "/c.flac" },
+      { id: "d", src: "/d.flac" },
+    ];
+    const secondReady = whenReady(engine);
+    engine.setQueue(secondTracks);
+    await secondReady;
+    await engine.play();
+    await flush();
+    await flush();
+    expect(ctx.sources.length).toBe(2); // track A's source, then track C's
+
+    // Track C ends naturally: a second, unrelated advance loads track D. If the pause
+    // requested during the first (superseded) advance had leaked, this advance would
+    // come out stuck paused for no reason visible anywhere in the new queue or the
+    // consumer's own calls.
+    ctx.sources[1]!.fireEnded();
+    await flush();
+    await flush();
+    await flush();
+
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.paused).toBe(false);
+    expect(engine.state).toBe("playing");
+  });
+
+  it("a skip's own resume is not blocked by a superseded advance that has not settled yet", async () => {
+    // Both loads fetch the same URL (track B), since next() targets the index the advance
+    // is already loading. In a real browser there is no guarantee the advance's own fetch,
+    // even though it started first, resolves before the skip's later one: this test forces
+    // the inverted order by holding the advance's fetch open while the skip's own fetch,
+    // for the same track, resolves normally.
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext, transition: "gap" });
+    const tracks = [
+      { id: "a", src: "/a.flac", source: "buffer" as const },
+      { id: "b", src: "/b.flac", source: "buffer" as const },
+    ];
+
+    let fetchCount = 0;
+    const staleFetchGate: { release: (() => void) | null } = { release: null };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      fetchCount++;
+      const response = {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(8),
+      } as unknown as Response;
+      if (fetchCount === 2) {
+        // The advance's own fetch for track B: hold it open.
+        await new Promise<void>((resolve) => {
+          staleFetchGate.release = () => resolve();
+        });
+      }
+      return response;
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = originalFetch;
+    };
+
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(1);
+
+    // Track A ends: the advance's fetch for track B is call #2, held open. The consumer
+    // taps next() immediately, superseding the advance; the skip's own fetch for track B,
+    // issued right after, is call #3, which resolves normally, so it finishes well before
+    // the held-open call #2 ever does.
+    ctx.sources[0]!.fireEnded();
+    engine.next();
+
+    await flush();
+    await flush();
+    await flush();
+
+    // The skip's own load has already completed. It must resume playback now, even though
+    // the advance it superseded has still not settled.
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.paused).toBe(false);
+    expect(engine.state).toBe("playing");
+
+    // Letting the stale advance's fetch finish afterward must change nothing.
+    staleFetchGate.release?.();
+    await flush();
+    await flush();
+    expect(engine.paused).toBe(false);
+    expect(engine.currentIndex).toBe(1);
+  });
 });

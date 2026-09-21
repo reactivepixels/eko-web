@@ -316,6 +316,11 @@ export class EkoWebEngine {
     // not just the case where `_paused` was already false. The one exception is a real
     // pause() called during that advance, which pauseRequestedDuringAdvance records.
     const wasPlaying = !this._paused || (this.advancing && !this.pauseRequestedDuringAdvance);
+    // This skip now owns the engine's state, so any advance it just superseded is no longer
+    // "in flight" from here on, whether or not that advance's own load has settled yet.
+    // play() below (or its own deferred call, once this load resolves) must not be blocked
+    // by advancing still reading true from a stale advance that has not noticed it lost.
+    this.advancing = false;
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
       // a manual skip is still an abrupt stop for the current track, so it must not click.
@@ -470,6 +475,13 @@ export class EkoWebEngine {
     const token = this.advanceToken;
     await this.loadIndex(index, token);
     this.advancing = false;
+    // The flag only means anything while an advance is in flight; reset it here,
+    // unconditionally, the moment this one settles, so a pause requested during THIS
+    // advance can never leak into a later, unrelated advance, regardless of whether this
+    // one was superseded. Read it into a local first: the normal path below still needs
+    // to know what it was.
+    const pauseRequested = this.pauseRequestedDuringAdvance;
+    this.pauseRequestedDuringAdvance = false;
     if (token !== this.advanceToken) {
       // Superseded by setQueue(), skipTo() or destroy() while this was loading. Whichever
       // call superseded it owns the engine's state now; this advance has nothing left to
@@ -479,10 +491,9 @@ export class EkoWebEngine {
     this._lastTransition = "gap";
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
-    if (this.pauseRequestedDuringAdvance) {
+    if (pauseRequested) {
       // The consumer asked to pause while this load was in flight. Honour that instead of
       // resuming: the load already left the engine paused, so there is nothing more to do.
-      this.pauseRequestedDuringAdvance = false;
       return;
     }
     await this.play();
