@@ -95,9 +95,10 @@ export class EkoWebEngine {
   private startCtxTime = 0;
   private startOffset = 0;
   // `loading` is true for the whole span of any in-flight loadIndex() call: the initial
-  // load from setQueue(), a manual skipTo(), or a gap-advance. The engine's own source must
-  // not be touched during that window (there may be nothing to touch, or touching it would
-  // race the load), so play()/pause() called during it cannot act immediately. Instead they
+  // load from setQueue(), a manual skip (next()/previous()/skipTo()), or a gap-advance. The
+  // engine's own source must not be touched during that window (there may be nothing to
+  // touch, or touching it would race the load), so play()/pause() called during it cannot
+  // act immediately. Instead they
   // record what the consumer actually wants in `pendingIntent`, and whichever call owns the
   // load (checked via `advanceToken`, same as everywhere else) honours it once the load
   // settles. This is one mechanism for all three windows, not three separate flags: a
@@ -106,10 +107,10 @@ export class EkoWebEngine {
   // consumer's clicks land.
   private loading = false;
   private pendingIntent: "play" | "pause" | null = null;
-  // Bumped by setQueue(), skipTo() and destroy(): the three calls that make an in-flight
-  // loadIndex() stale. loadIndex(), skipTo() and advanceWithGap() capture the current token
-  // when they start and check it again after their await, so a superseded load never assigns
-  // state or emits events for a track the engine has already moved past.
+  // Bumped by setQueue(), commitSkip() and destroy(): the three calls that make an in-flight
+  // loadIndex() stale. loadIndex(), commitSkip() and advanceWithGap() capture the current
+  // token when they start and check it again after their await, so a superseded load never
+  // assigns state or emits events for a track the engine has already moved past.
   private advanceToken = 0;
   // The boundary an armNext() call is currently loading for: the queue index it targets and
   // the source it is scheduled behind. Arming is async, and several calls can ask for the
@@ -265,13 +266,15 @@ export class EkoWebEngine {
 
   // ── Queue / load ────────────────────────────────────────────────────────────
   /**
-   * Replace the queue outright and load its first track.
+   * Replace the queue outright and load `startIndex` (the first track, by default).
+   * `EkoQueue.setTracks` already clamps an out-of-range `startIndex` into bounds, so this
+   * trusts that rather than re-checking it.
    *
-   * An empty `tracks` array clears the engine: whatever was loaded is disposed and
-   * released, and the engine goes idle, rather than leaving a stopped track behind a
-   * queue that now says there is nothing to play.
+   * An empty `tracks` array clears the engine: whatever was loaded is disposed and released,
+   * and the engine goes idle, rather than leaving a stopped track behind a queue that now
+   * says there is nothing to play.
    */
-  setQueue(tracks: EkoTrack[]): void {
+  setQueue(tracks: EkoTrack[], startIndex?: number): void {
     this.assertNotDestroyed();
     // Invalidate any in-flight load (a gap-advance, a skip) before it can assign state
     // this new queue owns now.
@@ -290,23 +293,26 @@ export class EkoWebEngine {
     }
     this.clearArmed(rampEnd);
     this.stopRaf();
-    this.tracks.setTracks(tracks);
+    this.tracks.setTracks(tracks, startIndex);
     this._paused = true;
     // A new queue starts with no intent of its own; any play()/pause() during its own
     // initial load is what sets one, same as the other two windows.
     this.pendingIntent = null;
     if (this.tracks.currentIndex < 0) {
-      // An empty queue has nothing left to play. Dispose whatever was loaded and go idle
-      // now, rather than leave index/queueLength reporting "empty" beside a track,
-      // duration and sourceKind left over from the queue this call just discarded, with
-      // state still reading "playing" or "paused" for a track that no longer exists.
+      // An empty queue (or a queue that setTracks otherwise left with nothing current) has
+      // no load to start, but there is still whatever was loaded before this call: without
+      // this, the snapshot would say "empty" (index -1, queueLength 0) right beside a
+      // track, duration and sourceKind left over from the queue this call just discarded,
+      // and state would still read "playing" or "paused" with nothing left to play. Dispose
+      // it and go idle, the same as destroy() leaves the engine, short of actually tearing
+      // down the graph.
       this.current?.dispose();
       this.current = null;
       this.setState("idle");
       return;
     }
     this.publish();
-    if (this.tracks.currentIndex >= 0) void this.startLoad(0, token);
+    void this.startLoad(this.tracks.currentIndex, token);
   }
 
   load(srcOrTrack: string | EkoTrack): void {
@@ -325,17 +331,17 @@ export class EkoWebEngine {
 
   /**
    * `token` is the value of `advanceToken` when this load started (see its declaration).
-   * Re-checked after the await: a load superseded by a newer setQueue(), skipTo() or
+   * Re-checked after the await: a load superseded by a newer setQueue(), commitSkip() or
    * destroy() call must not assign `current`/`index` or emit anything, since a later call
    * already owns the engine's state by the time this one would.
    *
    * Sets `loading` for its whole span; see that field's declaration for why. Never resumes
-   * playback itself: callers that have a boundary to report (skipTo(), advanceWithGap())
+   * playback itself: callers that have a boundary to report (commitSkip(), advanceWithGap())
    * do that first, then call `resolvePendingIntent()` themselves, so `play` never fires
    * before the `trackchange` it belongs after.
    *
    * This never touches the queue's position; the caller passes the exact `track` to load.
-   * `skipTo()` and `startLoad()` call this once the queue already sits at `index` (they moved
+   * `commitSkip()` and `startLoad()` call this once the queue already sits at `index` (they moved
    * it first). `advanceWithGap()` is the one exception: it passes a peeked track and only
    * commits the queue's move, via `advance()`, once this load actually succeeds, so a manual
    * `next()`/`previous()` racing an in-flight gap-advance still sees the queue where it was.
@@ -343,11 +349,11 @@ export class EkoWebEngine {
    * `stillValid`, when supplied, is checked at the same instant as `token`, right after the
    * await and before anything is assigned: it catches a change to what plays next that does
    * not bump `advanceToken` (a shuffle or repeat toggle mid-load). Only `advanceWithGap()`
-   * passes one; `skipTo()` and `startLoad()` have already moved the queue to `index` before
+   * passes one; `commitSkip()` and `startLoad()` have already moved the queue to `index` before
    * calling this, so `token` alone is enough for them.
    *
    * The two rejections below look similar but leave different obligations. A `token`
-   * mismatch means another call (setQueue()/skipTo()/destroy()) already owns the engine
+   * mismatch means another call (setQueue()/commitSkip()/destroy()) already owns the engine
    * and is issuing its own loadIndex() that will reset `loading`/state itself, so this one
    * leaves them alone. A `stillValid` failure has no such successor: nothing else is
    * coming to clean up, so this call must leave the engine coherent by itself, or `loading`
@@ -514,7 +520,7 @@ export class EkoWebEngine {
     const from = this.tracks.currentIndex;
     const historyDepth = this.tracks.historyLength;
     this.tracks.advance(true);
-    void this.skipTo(target, from, historyDepth);
+    void this.commitSkip(target, from, historyDepth);
   }
 
   /** Step back through what was actually played, which under shuffle is not index minus one. */
@@ -523,7 +529,26 @@ export class EkoWebEngine {
     const from = this.tracks.currentIndex;
     const historyDepth = this.tracks.historyLength;
     const target = this.tracks.stepBack();
-    if (target >= 0) void this.skipTo(target, from, historyDepth);
+    if (target >= 0) void this.commitSkip(target, from, historyDepth);
+  }
+
+  /**
+   * Jump straight to a track in the queue by position, such as a listener picking one off a
+   * playlist. Manual, like `next()`/`previous()`, so a small decode gap is acceptable here.
+   *
+   * An out-of-range index is ignored rather than throwing: `EkoQueue.jumpTo` already
+   * reports that by returning null, so this trusts that instead of re-checking the bound
+   * itself.
+   *
+   * Unlike `next()`/`previous()`, a jump is not "what was actually played" on the way there,
+   * so it does not extend `previous()`'s history; see `EkoQueue.jumpTo`.
+   */
+  skipTo(index: number): void {
+    this.assertNotDestroyed();
+    const from = this.tracks.currentIndex;
+    const historyDepth = this.tracks.historyLength;
+    if (!this.tracks.jumpTo(index)) return;
+    void this.commitSkip(index, from, historyDepth);
   }
 
   /** Changing this reshuffles the remaining tracks; it does not disturb what is playing. */
@@ -553,17 +578,21 @@ export class EkoWebEngine {
   }
 
   /**
+   * The shared machinery behind every manual skip (`next()`, `previous()`, the public
+   * `skipTo()`): the queue has already been moved to `index` by the time this is called, so
+   * this only has to load it and settle the bookkeeping around that.
+   *
    * `rollbackTo` is where the queue sat before the caller moved it to `index`, and
-   * `historyDepth` is `tracks.historyLength` at that same moment. next()/previous() move
-   * the queue eagerly, before this load even starts, so a rapid second press can compute
-   * its own target from the right place. If this specific load then fails, that eager move
-   * is now wrong: the listener is still on the old track, so the queue's index AND history
-   * are put back, or getSnapshot() would report the failed index against the track that is
-   * actually still loaded, and a following previous()/next() would be one entry off (it
-   * would either replay `rollbackTo` a second time, or skip past whatever `index` would
-   * have retired from history).
+   * `historyDepth` is `tracks.historyLength` at that same moment. next()/previous()/skipTo()
+   * move the queue eagerly, before this load even starts, so a rapid second press can
+   * compute its own target from the right place. If this specific load then fails, that
+   * eager move is now wrong: the listener is still on the old track, so the queue's index
+   * AND history are put back, or getSnapshot() would report the failed index against the
+   * track that is actually still loaded, and a following previous()/next() would be one
+   * entry off (it would either replay `rollbackTo` a second time, or skip past whatever
+   * `index` would have retired from history).
    */
-  private async skipTo(index: number, rollbackTo: number, historyDepth: number): Promise<void> {
+  private async commitSkip(index: number, rollbackTo: number, historyDepth: number): Promise<void> {
     // Invalidate any in-flight load (a gap-advance, another skip) before it can assign
     // state this skip now owns.
     this.advanceToken++;
@@ -755,7 +784,7 @@ export class EkoWebEngine {
     if (
       this._paused ||
       !this.ctx ||
-      // setQueue(), skipTo() or destroy() took the engine somewhere else mid-load.
+      // setQueue(), commitSkip() or destroy() took the engine somewhere else mid-load.
       token !== this.advanceToken ||
       // A boundary was crossed while this loaded, so it is arming behind the track that is
       // actually playing now.
@@ -881,12 +910,12 @@ export class EkoWebEngine {
       await this.loadIndex(index, track, token, () => this.tracks.peekNextIndex() === index);
     }
     if (token !== this.advanceToken) {
-      // Superseded by setQueue(), skipTo() or destroy() while this was loading. Whichever
+      // Superseded by setQueue(), commitSkip() or destroy() while this was loading. Whichever
       // call superseded it owns the engine's state now; this advance has nothing left to
       // do, not even reporting the boundary, since it never actually reached track `index`.
       return;
     }
-    // `token` only catches setQueue()/skipTo()/destroy(); it does not catch something that
+    // `token` only catches setQueue()/commitSkip()/destroy(); it does not catch something that
     // changes what plays next without moving the queue's position (a shuffle or repeat
     // toggle) or without bumping advanceToken. The `stillValid` predicate passed to
     // loadIndex() above already rejects the load on exactly this condition before it ever
@@ -931,7 +960,7 @@ export class EkoWebEngine {
    * of a crossfade, and that automation lives on the AudioParam, not on the armed track,
    * so disposing the armed track alone leaves the outgoing side ramping to (and then held
    * at) silence with nothing left to hand over to. Pinning here rather than at each call
-   * site is what makes that impossible to forget: skipTo() and setQueue() both keep
+   * site is what makes that impossible to forget: commitSkip() and setQueue() both keep
    * `this.current` when their own load fails, and would otherwise resume a track whose
    * gain is pinned at 0 while reporting "playing".
    *

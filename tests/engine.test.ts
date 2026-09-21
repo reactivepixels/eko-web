@@ -543,6 +543,72 @@ describe("EkoWebEngine shuffle and repeat options", () => {
   });
 });
 
+/** Resolve with the next trackchange payload, so tests never guess at tick counts. */
+function nextTrackChange(
+  engine: EkoWebEngine,
+): Promise<{ index: number; track: { id?: string } | null; transition: string }> {
+  return new Promise((res) => {
+    const off = engine.on("trackchange", (payload) => {
+      off();
+      res(payload as { index: number; track: { id?: string } | null; transition: string });
+    });
+  });
+}
+
+describe("EkoWebEngine: playing a specific queue index (I6)", () => {
+  it("setQueue(tracks, startIndex) loads the requested track instead of always track 0", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue(
+      [
+        { id: "a", src: "/a.flac" },
+        { id: "b", src: "/b.flac" },
+        { id: "c", src: "/c.flac" },
+      ],
+      2,
+    );
+    await ready;
+    expect(engine.currentIndex).toBe(2);
+    expect(engine.getSnapshot().track?.id).toBe("c");
+  });
+
+  it("has a public skipTo(index) that jumps straight to a queue position", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+      { id: "c", src: "/c.flac" },
+    ]);
+    await ready;
+
+    const changed = nextTrackChange(engine);
+    engine.skipTo(2);
+    const payload = await changed;
+    expect(payload.index).toBe(2);
+    expect(engine.currentIndex).toBe(2);
+    expect(engine.getSnapshot().track?.id).toBe("c");
+  });
+
+  it("ignores an out-of-range skipTo() index rather than throwing or corrupting state", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngine();
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+    ]);
+    await ready;
+
+    expect(() => engine.skipTo(99)).not.toThrow();
+    expect(() => engine.skipTo(-1)).not.toThrow();
+    expect(engine.currentIndex).toBe(0);
+    expect(engine.getSnapshot().track?.id).toBe("a");
+  });
+});
+
 describe("EkoWebEngine: setQueue([]) clears the engine (I3)", () => {
   it("goes idle, with no leftover track, duration or sourceKind, when the queue is emptied while playing", async () => {
     restoreFetch = stubFetch();
