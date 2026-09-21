@@ -482,6 +482,22 @@ describe("other transport calls during a gap-advance", () => {
     expect(engine.paused).toBe(false);
     expect(engine.currentIndex).toBe(1);
   });
+
+  // advanceWithGap() re-checks peekNextIndex() after its own await (the same shape
+  // armNext() already uses) so that a change to what plays next which does NOT bump
+  // advanceToken cannot make it commit to a target it never actually fetched. Nothing in
+  // today's public API can trigger that: every operation that moves the queue (setQueue(),
+  // next(), previous()) goes through skipTo() or setQueue() directly, and both already bump
+  // advanceToken, so this guard cannot be exercised honestly yet. It becomes exercisable,
+  // and needs a real test, once a shuffle or repeat toggle (setShuffle()/setRepeat(),
+  // milestone 2 task 3) can change peekNextIndex() without moving the queue's position or
+  // bumping advanceToken: hold a gap-advance's load open, flip shuffle or repeat mid-flight
+  // so peekNextIndex() now disagrees with the index the advance captured, let the load
+  // resolve, and assert the engine did not advance to the stale target (currentIndex and
+  // `current` still agree, and no trackchange fired for it).
+  it.todo(
+    "a shuffle/repeat change during an in-flight gap-advance does not commit to the stale target (needs Task 3's setShuffle()/setRepeat())",
+  );
 });
 
 describe("pending intent during a load", () => {

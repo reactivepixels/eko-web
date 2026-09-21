@@ -169,6 +169,47 @@ describe("EkoWebEngine error codes", () => {
     expect(error.cause).toBe(boom);
   });
 
+  it("a manual next() whose load fails leaves getSnapshot() reporting the track still playing, consistently", async () => {
+    restoreFetch = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    // Only the second decode (track b, loaded by next()) fails; the first (track a, the
+    // initial load) succeeds normally.
+    let decodeCount = 0;
+    const boom = new Error("bad bytes");
+    ctx.decodeAudioData = async () => {
+      decodeCount++;
+      if (decodeCount === 2) throw boom;
+      if (!ctx.nextBuffer) throw new Error("mock: no nextBuffer set");
+      return ctx.nextBuffer;
+    };
+    const engine = new EkoWebEngine({ context: ctx as unknown as AudioContext });
+    const ready = whenReady(engine);
+    engine.setQueue([
+      { id: "a", src: "/a.flac" },
+      { id: "b", src: "/b.flac" },
+    ]);
+    await ready;
+
+    const errored = new Promise<EkoError>((res) => {
+      engine.on("error", ({ error }) => res(error));
+    });
+    engine.next();
+    const error = await errored;
+    // The "error" event fires from inside loadIndex's own catch block, before skipTo's
+    // continuation (which does the rollback) has resumed from its await. Let that
+    // continuation actually run before asserting on its result.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(error.cause).toBe(boom);
+    // next() moved the queue to track b eagerly, before the failed load even started;
+    // the failure must roll that back, or index and track disagree about what is playing.
+    const snapshot = engine.getSnapshot();
+    expect(snapshot.index).toBe(0);
+    expect(snapshot.track?.id).toBe("a");
+    expect(engine.currentIndex).toBe(0);
+  });
+
   it("emits autoplay_blocked when resume rejects, without rejecting play()", async () => {
     restoreFetch = stubFetch();
     const { ctx, engine } = makeEngine();
