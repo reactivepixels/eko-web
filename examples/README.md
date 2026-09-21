@@ -1,9 +1,11 @@
 # eko-web examples
 
-## Harness (`player/`)
+## Player (`player/`), the canonical demo
 
-The ear-test harness, and the page that becomes the marketing player later. Build the
-library, serve the repo root, and open `examples/player/`:
+Start here. This is the ear-test harness during development, and the page that becomes the
+marketing player at release. Both files in this directory need a build first (there is no
+no-build option: both import from `dist/`). Build the library, serve the repo root, and
+open `examples/player/`:
 
 ```bash
 npm run build
@@ -16,9 +18,11 @@ and listen again: the silence you hear is what a plain `<audio>` element does at
 track boundary. The **shelf** checkbox proves the user insert point by putting a real
 biquad into the chain, and the spectrum is drawn from the engine's analyser tap.
 
-## Vanilla demo (`index.html`)
+## Vanilla demo (`index.html`), superseded by `player/`
 
-A no-build page to ear-test gapless + normalization with your own files.
+An older, minimal page for ear-testing gapless and normalization with your own files. Kept
+for now, but `player/` above is the one to use and the one that gets kept current; treat
+this one as legacy.
 
 ```bash
 pnpm build            # produces dist/ that the demo imports
@@ -27,8 +31,8 @@ pnpm dlx serve .      # or: python3 -m http.server
 ```
 
 Pick two tracks meant to flow (album pair, live segue), hit **Play**, and listen at the
-A→B boundary — **no silence**. Toggle **normalize** to hear loudness matching across the
-two masters.
+A to B boundary: no silence. Toggle **normalize** to hear loudness matching across the two
+masters.
 
 ## Using it from a `<audio>`-based player (e.g. gyro-media-player)
 
