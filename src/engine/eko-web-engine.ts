@@ -72,14 +72,18 @@ export class EkoWebEngine {
   // offset `startOffset` (seconds).
   private startCtxTime = 0;
   private startOffset = 0;
-  private playRequested = false;
-  // Set while a gap-advance (`advanceWithGap`) is loading the next track from a standing
-  // start. During that window `_paused` is also forced true, so a consumer's own `pause()`
-  // call cannot register through the normal "already paused" early return; this flag lets
-  // it record intent anyway, so the advance does not resume playback against the consumer's
-  // wishes once the load settles.
-  private advancing = false;
-  private pauseRequestedDuringAdvance = false;
+  // `loading` is true for the whole span of any in-flight loadIndex() call: the initial
+  // load from setQueue(), a manual skipTo(), or a gap-advance. The engine's own source must
+  // not be touched during that window (there may be nothing to touch, or touching it would
+  // race the load), so play()/pause() called during it cannot act immediately. Instead they
+  // record what the consumer actually wants in `pendingIntent`, and whichever call owns the
+  // load (checked via `advanceToken`, same as everywhere else) honours it once the load
+  // settles. This is one mechanism for all three windows, not three separate flags: a
+  // load-in-flight has exactly one outstanding intent at a time, and the most recent
+  // play()/pause() call during it is what should happen next, however many windows deep the
+  // consumer's clicks land.
+  private loading = false;
+  private pendingIntent: "play" | "pause" | null = null;
   // Bumped by setQueue(), skipTo() and destroy(): the three calls that make an in-flight
   // loadIndex() stale. loadIndex(), skipTo() and advanceWithGap() capture the current token
   // when they start and check it again after their await, so a superseded load never assigns
@@ -195,12 +199,16 @@ export class EkoWebEngine {
     // Invalidate any in-flight load (a gap-advance, a skip) before it can assign state
     // this new queue owns now.
     this.advanceToken++;
+    const token = this.advanceToken;
     this.teardown();
     this.queue = tracks.slice();
     this.index = tracks.length > 0 ? 0 : -1;
     this._paused = true;
+    // A new queue starts with no intent of its own; any play()/pause() during its own
+    // initial load is what sets one, same as the other two windows.
+    this.pendingIntent = null;
     this.publish();
-    if (this.index >= 0) void this.loadIndex(0, this.advanceToken);
+    if (this.index >= 0) void this.startLoad(0, token);
   }
 
   load(srcOrTrack: string | EkoTrack): void {
@@ -208,15 +216,28 @@ export class EkoWebEngine {
     this.setQueue([track]);
   }
 
+  /** The initial load for a queue has no boundary of its own to report; just honour intent. */
+  private async startLoad(index: number, token: number): Promise<void> {
+    await this.loadIndex(index, token);
+    if (token !== this.advanceToken) return;
+    this.resolvePendingIntent();
+  }
+
   /**
    * `token` is the value of `advanceToken` when this load started (see its declaration).
    * Re-checked after the await: a load superseded by a newer setQueue(), skipTo() or
    * destroy() call must not assign `current`/`index` or emit anything, since a later call
    * already owns the engine's state by the time this one would.
+   *
+   * Sets `loading` for its whole span; see that field's declaration for why. Never resumes
+   * playback itself — callers that have a boundary to report (skipTo(), advanceWithGap())
+   * do that first, then call `resolvePendingIntent()` themselves, so `play` never fires
+   * before the `trackchange` it belongs after.
    */
   private async loadIndex(index: number, token: number): Promise<void> {
     const track = this.queue[index];
     if (!track) return;
+    this.loading = true;
     this.setState("loading");
     this.emitter.emit("loadstart", { index });
     try {
@@ -231,21 +252,28 @@ export class EkoWebEngine {
       this.current = loaded;
       this.index = index;
       this.startOffset = 0;
+      this.loading = false;
       this.setState("ready");
       this.emitter.emit("loadedmetadata", { index, duration: loaded.duration });
       this.emitter.emit("durationchange", { duration: loaded.duration });
       this.emitter.emit("canplay", { index });
       this.publish();
-      if (this.playRequested) {
-        this.playRequested = false;
-        void this.play();
-      }
     } catch (error) {
       // A superseded load's own failure is not this engine's problem to report either.
       if (token !== this.advanceToken) return;
+      this.loading = false;
       this.setState("error");
       this.emitter.emit("error", { error: asEkoError(error, "decode_failed") });
     }
+  }
+
+  /** Act on whatever play()/pause() asked for while a load this token owns was in flight. */
+  private resolvePendingIntent(): void {
+    const intent = this.pendingIntent;
+    this.pendingIntent = null;
+    if (intent === "play") void this.play();
+    // "pause" or null: the load already left the engine paused with nothing started; there
+    // is nothing further to do.
   }
 
   private async loadTrack(track: EkoTrack): Promise<LoadedSource> {
@@ -262,13 +290,12 @@ export class EkoWebEngine {
 
   // ── Transport ───────────────────────────────────────────────────────────────
   async play(): Promise<void> {
-    if (this.advancing) {
-      // A gap-advance is mid-load; `current` still points at the just-ended, disposable
-      // source, so starting it now would audibly replay the wrong track. A resume is
-      // already queued for when the load settles (see advanceWithGap), so play() and
-      // pause() during this window are just competing intents: treat this as cancelling
-      // any pause requested in the meantime, and otherwise do nothing.
-      this.pauseRequestedDuringAdvance = false;
+    if (this.loading) {
+      // A load is mid-flight (the initial load, a skip, or a gap-advance): `current` may
+      // not exist yet, or may still point at a just-ended, disposable source, so starting
+      // anything now would either do nothing or audibly replay the wrong track. Record the
+      // intent; whichever call owns this load resumes for us once it settles.
+      this.pendingIntent = "play";
       return;
     }
     const ctx = this.ensureGraph();
@@ -289,8 +316,8 @@ export class EkoWebEngine {
       }
     }
     if (!this.current) {
-      // Play as soon as the current track finishes decoding.
-      this.playRequested = true;
+      // Nothing loaded and nothing loading either (no setQueue() call has happened yet).
+      // There is no in-flight load for an intent to attach to.
       return;
     }
     if (!this._paused) return;
@@ -303,13 +330,13 @@ export class EkoWebEngine {
   }
 
   pause(): void {
-    if (this._paused) {
-      // Nothing audible to fade: either genuinely idle, or a gap-advance is mid-load and
-      // already forced `_paused` true. In the latter case record the intent so the advance
-      // does not resume playback once its load settles; see `advanceWithGap`.
-      if (this.advancing) this.pauseRequestedDuringAdvance = true;
+    if (this.loading) {
+      // Same load-in-flight window play() guards above. Record the intent instead of
+      // touching a source that may not exist yet, or that the load is about to replace.
+      this.pendingIntent = "pause";
       return;
     }
+    if (this._paused) return; // genuinely idle already; nothing audible to fade
     const position = this.currentTime; // capture before the source stops
     this.fadeOutAndStop();
     this.clearArmed();
@@ -351,16 +378,17 @@ export class EkoWebEngine {
     // state this skip now owns.
     this.advanceToken++;
     const token = this.advanceToken;
-    // A gap-advance forces `_paused` true purely as internal bookkeeping while it loads,
-    // and fully intends to resume; a skip that interrupts it should honour that intent too,
-    // not just the case where `_paused` was already false. The one exception is a real
-    // pause() called during that advance, which pauseRequestedDuringAdvance records.
-    const wasPlaying = !this._paused || (this.advancing && !this.pauseRequestedDuringAdvance);
-    // This skip now owns the engine's state, so any advance it just superseded is no longer
-    // "in flight" from here on, whether or not that advance's own load has settled yet.
-    // play() below (or its own deferred call, once this load resolves) must not be blocked
-    // by advancing still reading true from a stale advance that has not noticed it lost.
-    this.advancing = false;
+    // Another load may already be in flight (the initial load, a gap-advance, or another
+    // skip): in that case `_paused` is just that load's bookkeeping, not real transport
+    // state, so what "was playing" actually means is whatever that load's own pending
+    // intent currently is (which a pause() during its window may already have changed).
+    // Otherwise it is the real, current paused state.
+    const wasPlaying = this.loading ? this.pendingIntent === "play" : !this._paused;
+    // This skip now owns the engine's state and is about to start its own load, so record
+    // its intent before anything else can read a stale one, and so any load it just
+    // superseded is no longer "in flight" from here on, whether or not that load's own
+    // await has settled yet.
+    this.pendingIntent = wasPlaying ? "play" : null;
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
       // a manual skip is still an abrupt stop for the current track, so it must not click.
@@ -381,7 +409,7 @@ export class EkoWebEngine {
     this.publish();
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
-    if (wasPlaying) void this.play();
+    this.resolvePendingIntent();
   }
 
   setVolume(v: number): void {
@@ -513,17 +541,13 @@ export class EkoWebEngine {
   private async advanceWithGap(index: number): Promise<void> {
     this.stopRaf();
     this._paused = true;
-    this.advancing = true;
+    // An advance always intends to resume once it settles (that is the whole point: the
+    // consumer was mid-playback when the track ended), unless a pause() during its window
+    // says otherwise. This is that default, in the same field a pause() or play() during
+    // the window overwrites.
+    this.pendingIntent = "play";
     const token = this.advanceToken;
     await this.loadIndex(index, token);
-    this.advancing = false;
-    // The flag only means anything while an advance is in flight; reset it here,
-    // unconditionally, the moment this one settles, so a pause requested during THIS
-    // advance can never leak into a later, unrelated advance, regardless of whether this
-    // one was superseded. Read it into a local first: the normal path below still needs
-    // to know what it was.
-    const pauseRequested = this.pauseRequestedDuringAdvance;
-    this.pauseRequestedDuringAdvance = false;
     if (token !== this.advanceToken) {
       // Superseded by setQueue(), skipTo() or destroy() while this was loading. Whichever
       // call superseded it owns the engine's state now; this advance has nothing left to
@@ -534,12 +558,7 @@ export class EkoWebEngine {
     this.publish();
     const track = this.queue[index];
     if (track) this.emitter.emit("trackchange", { index, track, transition: "gap" });
-    if (pauseRequested) {
-      // The consumer asked to pause while this load was in flight. Honour that instead of
-      // resuming: the load already left the engine paused, so there is nothing more to do.
-      return;
-    }
-    await this.play();
+    this.resolvePendingIntent();
   }
 
   private clearArmed(): void {

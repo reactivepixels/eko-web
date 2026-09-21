@@ -483,3 +483,94 @@ describe("other transport calls during a gap-advance", () => {
     expect(engine.currentIndex).toBe(1);
   });
 });
+
+describe("pending intent during a load", () => {
+  // These three windows (the very first load from setQueue(), a manual skip's own load,
+  // and a gap-advance's load) are all the same mechanism now: `loading` plus one
+  // `pendingIntent`, checked once the owning load settles. The gap-advance side of this is
+  // covered above; these cover the other two, which a single boolean (`playRequested`) and
+  // a token-blind `wasPlaying` snapshot used to get wrong.
+
+  it("honours pause() called while the very first load (from setQueue) is still in flight", async () => {
+    restore = stubFetch();
+    const { engine, tracks } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+
+    // Track A's fetch/decode has not resolved yet. Ask to play, then change your mind
+    // before it does — the first interaction anyone has with this library.
+    void engine.play();
+    engine.pause();
+
+    await ready;
+    await flush();
+
+    expect(engine.paused).toBe(true);
+    expect(engine.state).not.toBe("playing");
+  });
+
+  it("play() during the very first load does not start anything until the load settles", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+
+    void engine.play();
+    // The fetch/decode for track A is still in flight: nothing can have started yet.
+    expect(ctx.sources.length).toBe(0);
+
+    await ready;
+    await flush();
+
+    expect(ctx.sources.length).toBe(1);
+    expect(engine.state).toBe("playing");
+  });
+
+  it("honours pause() called while a manual skip's own load is in flight", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(1);
+
+    // next() starts loading track B. Before that settles, the consumer changes their mind
+    // — not a gap-advance interrupting anything, the skip's own load.
+    engine.next();
+    engine.pause();
+
+    await flush();
+    await flush();
+
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.paused).toBe(true);
+    expect(engine.state).not.toBe("playing");
+  });
+
+  it("play() during a manual skip's own load does not restart the old, faded-out source", async () => {
+    restore = stubFetch();
+    const { ctx, engine, tracks } = setup({ transition: "gap" });
+    const ready = whenReady(engine);
+    engine.setQueue(tracks);
+    await ready;
+    await engine.play();
+    await flush();
+    expect(ctx.sources.length).toBe(1);
+
+    engine.next(); // starts loading track B; the skip's own load is now in flight
+    void engine.play(); // redundant — already resuming once the load settles
+
+    // If play() wrongly restarted the old source immediately, a second source would exist
+    // right now, well before track B's load could possibly have settled.
+    expect(ctx.sources.length).toBe(1);
+
+    await flush();
+    await flush();
+
+    expect(ctx.sources.length).toBe(2); // exactly one further source, once the load settles
+    expect(engine.currentIndex).toBe(1);
+    expect(engine.state).toBe("playing");
+  });
+});
