@@ -67,6 +67,9 @@ export class EkoGraph {
 
   private disconnectAll(): void {
     this.rgGain.disconnect();
+    // Called from setInserts() too, after this.inserts has already been reassigned to the
+    // new array, so this pass is a no-op there: the new nodes have no outgoing connections
+    // yet. It only does real work on the destroy() path, for the previous insert chain.
     for (const node of this.inserts) node.disconnect();
     this.fadeGain.disconnect();
     this.userGain.disconnect();

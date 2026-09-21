@@ -78,4 +78,24 @@ describe("EkoGraph", () => {
     expect(asMock(graph.userGain).connections).toEqual([analyser]);
     expect(asMock(analyser).connections).toEqual([ctx.destination]);
   });
+
+  it("keeps a connected source wired to rgGain across a setInserts rebuild", () => {
+    const { graph } = setup();
+    const source = new MockGainNode();
+    source.connect(graph.input);
+
+    graph.setInserts([new MockGainNode() as unknown as AudioNode]);
+
+    expect(source.connections).toEqual([graph.rgGain]);
+  });
+
+  it("keeps a connected source wired to rgGain across the first analyser access", () => {
+    const { graph } = setup();
+    const source = new MockGainNode();
+    source.connect(graph.input);
+
+    void graph.analyser;
+
+    expect(source.connections).toEqual([graph.rgGain]);
+  });
 });
