@@ -109,6 +109,14 @@ export class MockAudioContext {
   nextBuffer: MockAudioBuffer | null = null;
   /** Every analyser created. Empty until something touches `graph.analyser`. */
   analysers: MockAnalyserNode[] = [];
+  /** Every media element source created. */
+  mediaSources: MockMediaElementSourceNode[] = [];
+
+  createMediaElementSource(_element: unknown): MockMediaElementSourceNode {
+    const node = new MockMediaElementSourceNode();
+    this.mediaSources.push(node);
+    return node;
+  }
 
   createGain(): MockGainNode {
     const g = new MockGainNode();
@@ -161,4 +169,56 @@ export function stubFetch(ok = true, status = 200): () => void {
   return () => {
     globalThis.fetch = original;
   };
+}
+
+/** Enough of an HTMLAudioElement for the element strategy to be tested in Node. */
+export class MockMediaElement {
+  src = "";
+  crossOrigin: string | null = null;
+  preload = "auto";
+  currentTime = 0;
+  duration = NaN;
+  paused = true;
+  private listeners = new Map<string, Set<() => void>>();
+
+  addEventListener(type: string, fn: () => void): void {
+    let set = this.listeners.get(type);
+    if (!set) {
+      set = new Set();
+      this.listeners.set(type, set);
+    }
+    set.add(fn);
+  }
+  removeEventListener(type: string, fn: () => void): void {
+    this.listeners.get(type)?.delete(fn);
+  }
+  async play(): Promise<void> {
+    this.paused = false;
+  }
+  pause(): void {
+    this.paused = true;
+  }
+  /** Test helper: announce metadata with a duration. */
+  fireLoadedMetadata(duration: number): void {
+    this.duration = duration;
+    for (const fn of [...(this.listeners.get("loadedmetadata") ?? [])]) fn();
+  }
+  /** Test helper: announce the natural end. */
+  fireEnded(): void {
+    for (const fn of [...(this.listeners.get("ended") ?? [])]) fn();
+  }
+  /** Test helper: announce a load failure. */
+  fireError(): void {
+    for (const fn of [...(this.listeners.get("error") ?? [])]) fn();
+  }
+}
+
+export class MockMediaElementSourceNode {
+  connections: unknown[] = [];
+  connect(destination?: unknown): void {
+    this.connections.push(destination);
+  }
+  disconnect(): void {
+    this.connections = [];
+  }
 }

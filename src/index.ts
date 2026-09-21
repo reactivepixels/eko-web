@@ -30,3 +30,4 @@ export type {
   AudioSourceStrategy,
 } from "./engine/sources/source";
 export { BufferSourceStrategy } from "./engine/sources/buffer-source";
+export { ElementSourceStrategy } from "./engine/sources/element-source";
