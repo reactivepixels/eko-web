@@ -39,13 +39,13 @@ _fidelity_.** If you need bit-perfect, that's what the native EKO app is for.
 ## Install
 
 ```bash
-npm install eko-web   # or: pnpm add eko-web
+npm install @rpxl/eko-web   # or: pnpm add @rpxl/eko-web
 ```
 
 ## Quick start
 
 ```ts
-import { EkoWebEngine } from "eko-web";
+import { EkoWebEngine } from "@rpxl/eko-web";
 
 const engine = new EkoWebEngine({ normalize: true }); // gapless is the default transition
 
@@ -62,7 +62,7 @@ await engine.play(); // resumes the AudioContext on this user gesture
 
 ### Drop into an existing `<audio>`-based player
 
-eko-web ships an `HTMLMediaElement`-compatible facade (`eko-web/element`) so it slots into
+eko-web ships an `HTMLMediaElement`-compatible facade (`@rpxl/eko-web/element`) so it slots into
 players that drive an `<audio>` element (e.g. via a `mediaRef`) with no fork: you
 immediately get loudness normalization. (True gapless needs the engine to own the queue;
 see the docs.)
@@ -72,7 +72,7 @@ see the docs.)
 **v0.1, feature-complete engine, not yet published to npm.** Done: the engine (buffer
 playback with true gapless queueing, a streaming fallback for long files, loudness
 normalization from a tag or measured, click-free play/pause/seek), coded errors you can
-branch on, the `EkoAudioElement` facade (`eko-web/element`), and the ear-test player in
+branch on, the `EkoAudioElement` facade (`@rpxl/eko-web/element`), and the ear-test player in
 `examples/player/`. See [`examples/README.md`](./examples/README.md); it needs a build
 first, it is not a no-build page. 145 unit tests, dual ESM/CJS build with types.
 

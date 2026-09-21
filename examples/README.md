@@ -41,7 +41,7 @@ that drives a `mediaRef` — single-track playback + loudness normalization with
 
 ```tsx
 import { useMediaPlayer } from "gyro-media-player";
-import { EkoAudioElement } from "eko-web/element";
+import { EkoAudioElement } from "@rpxl/eko-web/element";
 import { useRef } from "react";
 
 function Player({ src }: { src: string }) {
