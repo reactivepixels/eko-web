@@ -136,12 +136,16 @@ describe("BufferSourceStrategy", () => {
     loaded.connect(destination as unknown as AudioNode);
     loaded.start(0, 0);
     const sourcesBefore = ctx.sources.length;
+    const gain = loaded.gain as unknown as MockGainNode;
 
     loaded.dispose();
 
     expect(() => loaded.start(0, 0)).toThrow(expect.objectContaining({ code: "destroyed" }));
     // No fresh, disconnected node was built either.
     expect(ctx.sources.length).toBe(sourcesBefore);
+    // dispose() releases the source's own gain too, or it stays connected to the graph
+    // for the lifetime of the page, one leaked node per track ever played.
+    expect(gain.connections).toEqual([]);
   });
 
   it("reports bufferedEnd as the full duration, since the whole file is already decoded", async () => {

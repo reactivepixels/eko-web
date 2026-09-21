@@ -182,12 +182,16 @@ describe("ElementSourceStrategy", () => {
     const loaded = await loadWithMetadata(strategy, ctx, element, { src: "/long.flac" });
     loaded.connect(new MockGainNode() as unknown as AudioNode);
     loaded.start(0, 0);
+    const gain = loaded.gain as unknown as MockGainNode;
 
     loaded.dispose();
 
     expect(() => loaded.start(0, 10)).toThrow(expect.objectContaining({ code: "destroyed" }));
     // Nothing silently resumed playback on the (now `src=""`) element either.
     expect(element.paused).toBe(true);
+    // dispose() releases the source's own gain too, not just the persistent
+    // MediaElementAudioSourceNode, or it stays connected to the graph for good.
+    expect(gain.connections).toEqual([]);
   });
 
   it("reports an async start() failure through onStartError when play() rejects", async () => {

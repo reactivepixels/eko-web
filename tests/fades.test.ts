@@ -45,7 +45,7 @@ describe("engine fades", () => {
     await ready;
     await engine.play();
 
-    const fadeGain = ctx.gains[1]!; // rg, fade, user
+    const fadeGain = ctx.gains[1]!; // input, fade, user
     expect(fadeGain.gain.scheduled.at(-1)).toEqual({ value: 0, time: 0 });
     expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 1, time: DEFAULT_FADE_SECONDS });
   });
@@ -121,7 +121,7 @@ describe("engine fades", () => {
     const rampEnd = 0.1 + DEFAULT_FADE_SECONDS;
     engine.seek(0.3);
 
-    const fadeGain = ctx.gains[1]!; // rg, fade, user
+    const fadeGain = ctx.gains[1]!; // input, fade, user
     // Sample just before the cut: if seek's own restart cancelled the fade-out's landing
     // ramp (the bug), the gain never actually ramped down and this reads back near 1 (a
     // click at the cut). A real fade reads back near 0 here.

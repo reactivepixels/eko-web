@@ -35,7 +35,14 @@ export interface LoadedSource {
    * Null until `connect()` has been called.
    */
   readonly gain: GainNode | null;
-  /** Set the node this source plays into. Call before `start()`. */
+  /**
+   * Set the node this source plays into. Call exactly once per loaded source, before
+   * `start()`. Unlike `start()`, this is not restartable: it creates the source's own
+   * `gain` node on each call, so a second call would build a second gain and silently
+   * orphan the first (still connected, never disposed) rather than reusing or replacing
+   * it. If a source ever needs to move to a different destination, that is a new
+   * `LoadedSource`, not a second `connect()` on this one.
+   */
   connect(destination: AudioNode): void;
   /**
    * Begin playback. `when` is an AudioContext time, where 0 means immediately.
