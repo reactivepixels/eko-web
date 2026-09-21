@@ -44,11 +44,12 @@ describe("EkoWebEngine — load", () => {
   it("emits an error and enters the error state when the fetch fails", async () => {
     restoreFetch = stubFetch(false, 404);
     const { engine } = makeEngine();
-    const error = await new Promise<Error>((res) => {
+    const error = await new Promise<EkoError>((res) => {
       engine.on("error", ({ error }) => res(error));
       engine.setQueue([{ src: "/missing.flac" }]);
     });
-    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(EkoError);
+    expect(error.code).toBe("fetch_failed");
     expect(engine.state).toBe("error");
   });
 });
