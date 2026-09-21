@@ -8,10 +8,16 @@ no-build option: both import from `dist/`). Build the library, serve the repo ro
 open `examples/player/`:
 
 ```bash
-npm run build
-npx serve .
-# then open http://localhost:3000/examples/player/
+npm run harness
+# then open http://localhost:4321/examples/player/
 ```
+
+**Serve the repo root, not this directory.** The page imports `../../dist/index.js`, which
+sits above `examples/player/`. Point a server at `examples/player/` and that path lands
+outside the server root, the module never loads, and nothing on the page responds: the file
+picker does nothing and Play stays disabled. The page detects this and says so, but
+`npm run harness` avoids it entirely. Opening the file directly over `file://` fails the
+same way, because browsers block ES module imports there.
 
 Pick a short loop, press play, and listen at the seam where it repeats. Untick **gapless**
 and listen again: the silence you hear is what a plain `<audio>` element does at every
