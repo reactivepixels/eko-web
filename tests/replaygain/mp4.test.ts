@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseMp4 } from "../../src/replaygain/mp4";
+import { parseMp4, parseMp4Fragment } from "../../src/replaygain/mp4";
 import { buildMp4, buildMp4Keys } from "../fixtures/replaygain/build";
 
 /**
@@ -608,5 +608,74 @@ describe("MP4 keys scheme (ffmpeg / QuickTime metadata)", () => {
       { handlerType: "mdir", extraIlstAtoms: freeform },
     );
     expect(parseMp4(tag)).toEqual({ peak: 0.988525 }); // only the freeform atom is read
+  });
+});
+
+/**
+ * `parseMp4Fragment` is the fragment-tolerant counterpart `fetch-range.ts` uses for a
+ * TAIL Range request's bytes, which do not start at a file's offset 0: a non-faststart
+ * MP4 (the real, common case this exists for) puts `moov` at the very END of the file,
+ * so a tail fragment starts mid-`mdat`, with no `ftyp` and no atom boundary at its own
+ * offset 0. `parseMp4` itself is untouched by this addition (see its own describe
+ * blocks above): this scans for a `moov` atom header at any offset instead of assuming
+ * one at 0.
+ */
+describe("MP4 fragment-tolerant entry (parseMp4Fragment)", () => {
+  it("reads gain and peak from a real non-faststart tail fragment, sliced mid-mdat from a real encoder file", () => {
+    // tone-keys.m4a's real atom layout (see the dumped tree above `tone-keys.m4a`'s
+    // other describe block): mdat spans [36, 1329), moov spans [1329, 2301). Slicing
+    // from byte 700 lands inside mdat, well past its own header, with moov starting
+    // partway into the resulting fragment (at relative offset 629) rather than at 0.
+    const wholeFile = new Uint8Array(
+      readFileSync(new URL("../fixtures/replaygain/tone-keys.m4a", import.meta.url)),
+    );
+    const tailFragment = wholeFile.subarray(700);
+    expect(parseMp4Fragment(tailFragment)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("returns {} without throwing when 'moov' appears as incidental bytes with no valid atom header before it", () => {
+    // The 4 bytes immediately before this "moov" text decode to a declared size (as a
+    // big-endian uint32) that runs the "atom" past the end of the buffer, so it must
+    // fail readAtomHeader's bounds check and be skipped, not trusted.
+    const filler = new Array(64).fill(0x11);
+    const bogusSize = [0xff, 0xff, 0xff, 0xff]; // absurdly large declared size
+    const bytes = new Uint8Array([...filler, ...bogusSize, ...asciiBytes("moov"), ...filler]);
+    expect(() => parseMp4Fragment(bytes)).not.toThrow();
+    expect(parseMp4Fragment(bytes)).toEqual({});
+  });
+
+  it("returns {} without throwing for a fragment containing no 'moov' text at all", () => {
+    const bytes = new Uint8Array(256).fill(0x42);
+    expect(() => parseMp4Fragment(bytes)).not.toThrow();
+    expect(parseMp4Fragment(bytes)).toEqual({});
+  });
+
+  it("skips a structurally-plausible but tag-less 'moov' candidate and keeps looking, rather than stopping at the first match", () => {
+    // A well-formed moov atom (built with buildMp4Keys, `udta`/`meta`/`ilst` chain and
+    // all) that carries NO recognized ReplayGain key, placed before the real, tagged
+    // one. The scanner must not stop at the first structurally valid `moov` it finds:
+    // it must keep going until it finds one with actual tags, or run out and return {}.
+    const untaggedMoov = buildMp4Keys({ some_other_key: "not replaygain" });
+    const taggedMoov = buildMp4({ [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE });
+    const bytes = new Uint8Array([...untaggedMoov, ...taggedMoov]);
+    expect(parseMp4Fragment(bytes)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("does not read past a false candidate's own declared (empty) size into unrelated trailing bytes", () => {
+    // A "moov" match whose declared size is a real, validly-bounded 8 (header only,
+    // zero-length payload): correct behaviour is an empty child search, because that
+    // candidate's payloadStart === atomEnd. Immediately after it sits a genuine,
+    // complete udta/meta/ilst chain carrying real tags -- but that chain is NOT
+    // nested inside the false candidate's own (empty) bounds, so it must not be
+    // found via this candidate. This is the case that specifically proves the
+    // candidate's OWN declared size is what bounds the search, not just "does a
+    // udta/meta/ilst chain exist somewhere after this offset": a scanner that
+    // ignored the declared size (e.g. always searched to the end of the buffer)
+    // would wrongly return the trailing chain's tags instead of {}.
+    const fakeMoovHeader = new Uint8Array([...u32BE(8), ...asciiBytes("moov")]); // size 8: empty payload
+    const realMoovAtom = buildMp4({ [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE });
+    const udtaChainOnly = realMoovAtom.subarray(8); // strip the real atom's own "moov" wrapper
+    const bytes = new Uint8Array([...fakeMoovHeader, ...udtaChainOnly]);
+    expect(parseMp4Fragment(bytes)).toEqual({});
   });
 });

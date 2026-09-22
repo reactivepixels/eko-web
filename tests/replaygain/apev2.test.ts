@@ -46,6 +46,22 @@ describe("APEv2", () => {
     expect(parseApev2(tag)).toEqual({ gainDb: -6.5, peak: 0.988525 });
   });
 
+  it("reads gain and peak from a footer-only tag preceded by unrelated bytes, as a tail Range fragment would be", () => {
+    // fetch-range.ts's tail request returns the LAST N bytes of a file, not the tag on
+    // its own: the tag is preceded by whatever audio data happened to fall inside that
+    // range. `parseApev2` only ever looks at `bytes.length - 32` for the footer, so
+    // prepending unrelated bytes before a real tag must not change the result.
+    const tag = buildApev2(
+      { [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE },
+      { footerOnly: true },
+    );
+    const precedingAudioBytes = new Uint8Array(500).fill(0xaa);
+    const fragment = new Uint8Array(precedingAudioBytes.length + tag.length);
+    fragment.set(precedingAudioBytes, 0);
+    fragment.set(tag, precedingAudioBytes.length);
+    expect(parseApev2(fragment)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
   it("reads gain and peak from a tag with a header present", () => {
     const tag = buildApev2(
       { [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE },

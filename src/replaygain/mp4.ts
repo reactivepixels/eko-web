@@ -453,3 +453,117 @@ export function parseMp4(bytes: Uint8Array): ReplayGainTags {
     return {};
   }
 }
+
+const MOOV_TYPE = "moov";
+const MOOV_MAGIC = [0x6d, 0x6f, 0x6f, 0x76]; // "moov"
+
+/**
+ * Finds every offset in `bytes` whose 4 bytes spell "moov", treating each match as the
+ * TYPE field of a candidate atom header and returning the offset of that header's OWN
+ * start (4 bytes earlier, where its declared size would live). A match closer than 4
+ * bytes to the start of `bytes` is skipped: there's no room for a size field before it.
+ *
+ * This is a plain byte scan, not atom-aware: it does not know yet whether any given
+ * match is a real atom header or four incidental bytes inside compressed audio data
+ * that happen to spell the same four letters. It only proposes candidates;
+ * `parseMp4Fragment` is what validates (or rejects) each one via `readAtomHeader`,
+ * the same bounds-checked read `parseMp4`'s own top-level `moov` lookup relies on.
+ */
+function findMoovHeaderCandidates(bytes: Uint8Array): number[] {
+  const candidates: number[] = [];
+  for (let i = 4; i + MOOV_MAGIC.length <= bytes.length; i++) {
+    let matches = true;
+    for (let j = 0; j < MOOV_MAGIC.length; j++) {
+      if (bytes[i + j] !== MOOV_MAGIC[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) candidates.push(i - 4);
+  }
+  return candidates;
+}
+
+/**
+ * Reads ReplayGain tags out of a `moov` atom already located at `moov.payloadStart` ..
+ * `moov.atomEnd`, walking the exact same `udta` -> `meta` -> `ilst`/`hdlr`/`keys` chain
+ * `parseMp4` walks from its own top-level `moov` (see that function's body, and its
+ * module comment's four numbered traps, none of which are re-explained here).
+ * `parseMp4Fragment` is the only caller; kept separate from `parseMp4`'s own body so
+ * that function stays untouched by this addition.
+ */
+function readReplayGainFromMoov(bytes: Uint8Array, moov: AtomHeader): ReplayGainTags {
+  const udta = findChild(bytes, moov.payloadStart, moov.atomEnd, "udta");
+  if (!udta) return {};
+
+  const meta = findChild(bytes, udta.payloadStart, udta.atomEnd, "meta");
+  if (!meta) return {};
+
+  const metaChildrenStart = meta.payloadStart + META_VERSION_FLAGS_SIZE;
+  if (metaChildrenStart > meta.atomEnd) return {};
+
+  const ilst = findChild(bytes, metaChildrenStart, meta.atomEnd, "ilst");
+  if (!ilst) return {};
+
+  const hdlr = findChild(bytes, metaChildrenStart, meta.atomEnd, HDLR_TYPE);
+  const handlerType = hdlr ? readHandlerType(bytes, hdlr)?.toLowerCase() : undefined;
+
+  const tags: ReplayGainTags = {};
+
+  if (handlerType !== HANDLER_MDTA) {
+    walkChildren(bytes, ilst.payloadStart, ilst.atomEnd, (child) => {
+      if (child.type === FREEFORM_TYPE) readFreeformInto(bytes, child, tags);
+    });
+  }
+
+  if (handlerType !== HANDLER_MDIR) {
+    const keys = findChild(bytes, metaChildrenStart, meta.atomEnd, KEYS_TYPE);
+    if (keys) {
+      const keyNames = parseKeyNames(bytes, keys);
+      walkChildren(bytes, ilst.payloadStart, ilst.atomEnd, (child) => {
+        readKeysEntryInto(bytes, child, keyNames, tags);
+      });
+    }
+  }
+
+  return tags;
+}
+
+/**
+ * Fragment-tolerant counterpart to `parseMp4`, for a byte range that is NOT
+ * guaranteed to start at a file's offset 0 (see `fetch-range.ts`'s tail Range
+ * request): a non-faststart MP4 puts its `moov` atom at the very END of the file, so
+ * those tail bytes start mid-`mdat`, with no `ftyp` and no atom boundary at their own
+ * offset 0 -- `moov` can be anywhere in the fragment, not just at its start. This is
+ * exactly the case a tail Range request exists to serve, and `parseMp4` (which only
+ * ever looks for `moov` at offset 0) cannot read it.
+ *
+ * Every candidate `moov` match `findMoovHeaderCandidates` proposes is validated the
+ * same bounds-checked way `parseMp4` validates its own top-level atom, via
+ * `readAtomHeader`: a candidate whose declared size doesn't fit within `bytes`, or
+ * whose declared type isn't actually "moov" (the 4-byte match was on the type field
+ * position, but the size field 4 bytes earlier decides whether that reading holds
+ * up), is skipped rather than trusted. A candidate that IS a well-formed atom but
+ * whose `udta`/`meta`/`ilst` chain contains no recognized ReplayGain key is also
+ * skipped, in case an earlier, unrelated `moov`-shaped false positive is hiding the
+ * real one further in. A false positive therefore costs nothing worse than moving on
+ * to the next candidate, or `{}` once none is left: this can never throw.
+ *
+ * `parseMp4` itself is untouched by this addition: it still only ever looks for
+ * `moov` at offset 0, and its own tests (see `mp4.test.ts`'s earlier describe blocks)
+ * stay meaningful as tests of that behavior.
+ */
+export function parseMp4Fragment(bytes: Uint8Array): ReplayGainTags {
+  try {
+    for (const headerOffset of findMoovHeaderCandidates(bytes)) {
+      const moov = readAtomHeader(bytes, headerOffset, bytes.length);
+      if (!moov || moov.type !== MOOV_TYPE) continue;
+
+      const tags = readReplayGainFromMoov(bytes, moov);
+      if (tags.gainDb !== undefined || tags.peak !== undefined) return tags;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
