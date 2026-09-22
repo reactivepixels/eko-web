@@ -134,3 +134,38 @@ describe("fade-then-dispose ordering on a manual skip", () => {
     expect(outgoingGain.connections.length).toBe(0);
   });
 });
+
+describe("fade-then-dispose ordering when the queue is emptied", () => {
+  it("keeps the outgoing source connected until the fade's ramp end", async () => {
+    restoreFetch = stubFetch();
+    const ctx = new MockAudioContext();
+    ctx.nextBuffer = makeToneBuffer(0.5);
+    const engine = new EkoWebEngine({
+      context: ctx as unknown as AudioContext,
+      transition: "gap",
+    });
+
+    const ready = whenReady(engine);
+    engine.setQueue([{ id: "a", src: "/a.flac" }]);
+    await ready;
+    await engine.play();
+
+    const outgoingSource = ctx.sources[0]!;
+    const outgoingGain = sourceGains(ctx)[0]!;
+    expect(outgoingGain.connections.length).toBeGreaterThan(0);
+
+    // Emptying the queue fades the playing track out, exactly as a skip does. The
+    // empty-queue branch returns before any load, so it owns its own teardown, and it
+    // must honour that fade rather than cutting on the spot.
+    const at = ctx.currentTime;
+    engine.setQueue([]);
+
+    expect(outgoingSource.stopWhen).not.toBeNull();
+    expect(outgoingSource.stopWhen!).toBeGreaterThan(at);
+    expect(outgoingGain.connections.length).toBeGreaterThan(0);
+
+    // Once the ramp has passed, the deferred teardown runs and the node is released.
+    await wait(40);
+    expect(outgoingGain.connections.length).toBe(0);
+  });
+});

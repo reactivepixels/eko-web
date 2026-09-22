@@ -327,7 +327,11 @@ export class EkoWebEngine {
       // and state would still read "playing" or "paused" with nothing left to play. Dispose
       // it and go idle, the same as destroy() leaves the engine, short of actually tearing
       // down the graph.
-      this.current?.dispose();
+      // Honour a fade already in flight, the same as the load path below does: this
+      // branch returns before any load, so nothing else is coming to tear the old source
+      // down at the right moment. Cutting here would undo the fade this call just started.
+      if (this.current && rampEnd !== undefined) this.stopAndDisposeAt(this.current, rampEnd);
+      else this.current?.dispose();
       this.current = null;
       this.setState("idle");
       return;
