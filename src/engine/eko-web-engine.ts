@@ -333,7 +333,7 @@ export class EkoWebEngine {
       return;
     }
     this.publish();
-    void this.startLoad(this.tracks.currentIndex, token);
+    void this.startLoad(this.tracks.currentIndex, token, rampEnd);
   }
 
   load(srcOrTrack: string | EkoTrack): void {
@@ -341,11 +341,15 @@ export class EkoWebEngine {
     this.setQueue([track]);
   }
 
-  /** The initial load for a queue has no boundary of its own to report; just honour intent. */
-  private async startLoad(index: number, token: number): Promise<void> {
+  /**
+   * The initial load for a queue has no boundary of its own to report; just honour intent.
+   * `rampEnd` is setQueue()'s own fade end, when it interrupted a track already playing;
+   * see loadIndex()'s doc comment for why that has to reach the outgoing source's disposal.
+   */
+  private async startLoad(index: number, token: number, rampEnd?: number): Promise<void> {
     const track = this.tracks.current;
     if (!track) return;
-    await this.loadIndex(index, track, token);
+    await this.loadIndex(index, track, token, undefined, rampEnd);
     if (token !== this.advanceToken) return;
     this.resolvePendingIntent();
   }
@@ -380,12 +384,23 @@ export class EkoWebEngine {
    * coming to clean up, so this call must leave the engine coherent by itself, or `loading`
    * stays true and `play()`/`pause()` go silently dead until some unrelated call happens to
    * bump the token later.
+   *
+   * `rampEnd`, when supplied, is the AudioContext time a fade already in flight (started by
+   * the caller before this load began) reaches silence. The outgoing `current` is then torn
+   * down at that time instead of the instant this load succeeds, via the same
+   * `stopAndDisposeAt()` `clearArmed()` already uses for the armed track: disposing here
+   * disconnects the outgoing source's gain node, and doing that the moment a fast (cached)
+   * decode resolves cuts the fade audibly, well before it has actually reached silence.
+   * Callers with no fade in flight (a paused skip, a gap-advance off a natural end) omit
+   * this, and get today's immediate disposal; deferring one there would leak the node until
+   * a timer nothing is waiting for happens to fire.
    */
   private async loadIndex(
     index: number,
     track: EkoTrack,
     token: number,
     stillValid?: () => boolean,
+    rampEnd?: number,
   ): Promise<void> {
     this.loading = true;
     this.setState("loading");
@@ -409,7 +424,10 @@ export class EkoWebEngine {
       loaded.connect(this.graph!.input);
       loaded.onEnded(() => this.handleSourceEnded());
       loaded.onStartError((error) => this.handleStartError(error));
-      this.current?.dispose();
+      if (this.current) {
+        if (rampEnd === undefined) this.current.dispose();
+        else this.stopAndDisposeAt(this.current, rampEnd);
+      }
       this.current = loaded;
       this.startOffset = 0;
       this.loading = false;
@@ -659,7 +677,7 @@ export class EkoWebEngine {
     // next()/previous() already moved the queue to `index` before calling this, so the
     // track to load is whatever the queue now says is current.
     const track = this.tracks.current;
-    if (track) await this.loadIndex(index, track, token);
+    if (track) await this.loadIndex(index, track, token, undefined, rampEnd);
     if (token !== this.advanceToken) {
       // Superseded (setQueue() or a newer skip) while this one was loading; whichever call
       // superseded it owns the engine's state now.
