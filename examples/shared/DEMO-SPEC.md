@@ -11,9 +11,10 @@ shared `examples/shared/eko-player.css`. The design is EKO's neumorphic
 language, lifted from the existing hand-rolled player on the marketing site so
 these match the product rather than inventing a new look.
 
-`examples/shared/MARKUP-REFERENCE.html` is the exact DOM the stylesheet expects.
-Reproduce that structure in your framework. Class names are the contract: if you
-rename one, the styling silently breaks.
+`examples/vanilla/index.html` is the reference implementation: the exact DOM the
+stylesheet expects, with no framework in the way. Read it first and follow its
+structure. Class names are the contract: rename one and the styling silently
+breaks.
 
 ## Buildless, deliberately
 
