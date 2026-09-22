@@ -1,16 +1,87 @@
 import {
+  getCurrentInstance,
+  markRaw,
+  onMounted,
   onScopeDispose,
   readonly,
   ref,
+  shallowReadonly,
   shallowRef,
   toValue,
   watch,
   type MaybeRefOrGetter,
   type Ref,
+  type ShallowRef,
 } from "vue";
-import type { EkoWebEngine } from "../engine/eko-web-engine";
+import { EkoWebEngine } from "../engine/eko-web-engine";
 import type { EkoSnapshot } from "../engine/snapshot";
 import type { RepeatMode } from "../queue/queue";
+import type { EkoTrack, EkoWebEngineOptions } from "../types";
+import { captureCarry, engineKey, restoreCarry } from "../bindings/rebuild";
+
+/** What `useEkoWebEngine` loads into the engine it builds, once. Mirrors the React type. */
+export interface EkoWebEngineInit {
+  /** The tracks to queue. Loaded once: call `engine.setQueue()` after that. */
+  queue?: EkoTrack[];
+  /** Where in `queue` to start. Default: the first track. */
+  startIndex?: number;
+}
+
+/**
+ * Create an {@link EkoWebEngine} owned by the current component (or `effectScope`):
+ * destroyed when the scope is disposed, and rebuilt when an option that only the
+ * constructor reads changes. Returns a readonly ref, which `useEkoPlayer` and `useEkoTime`
+ * accept as is.
+ *
+ * ```ts
+ * const engine = useEkoWebEngine({ transition: "gapless" }, { queue: TRACKS });
+ * const player = useEkoPlayer(engine);
+ * ```
+ *
+ * Mirrors `useEkoWebEngine` in `src/react/index.ts`; see that doc for exactly what a
+ * rebuild carries over (queue, position in it, shuffle, repeat, volume, mute) and what it
+ * does not (playback position, inserts). Pass `options` as a ref, a getter or a
+ * `reactive()` object to change them later; a plain object is read once.
+ *
+ * Inside a component the initial queue loads in `onMounted`, so a server render never
+ * starts a fetch. In a bare `effectScope()` there is no mount, so it loads immediately.
+ *
+ * The engine is `markRaw`, so putting it in reactive state never wraps an `AudioContext`
+ * in a Proxy.
+ */
+export function useEkoWebEngine(
+  options: MaybeRefOrGetter<EkoWebEngineOptions> = {},
+  init: EkoWebEngineInit = {},
+): Readonly<ShallowRef<EkoWebEngine>> {
+  const engine = shallowRef(markRaw(new EkoWebEngine(toValue(options))));
+
+  const loadInitial = () => {
+    if (init.queue && init.queue.length > 0) engine.value.setQueue(init.queue, init.startIndex);
+  };
+  if (getCurrentInstance()) onMounted(loadInitial);
+  else loadInitial();
+
+  // Two sources rather than one array getter: a getter returning a fresh array would read
+  // as changed on every run. Each of these compares by value (the key) or identity (the
+  // context), so only a real change rebuilds.
+  const stopWatch = watch(
+    [() => engineKey(toValue(options)), () => toValue(options).context],
+    () => {
+      const old = engine.value;
+      const next = markRaw(new EkoWebEngine(toValue(options)));
+      restoreCarry(next, captureCarry(old));
+      engine.value = next;
+      old.destroy();
+    },
+  );
+
+  onScopeDispose(() => {
+    stopWatch();
+    engine.value.destroy();
+  });
+
+  return shallowReadonly(engine);
+}
 
 /**
  * The engine's current snapshot plus the transport it exposes, as one object. Mirrors

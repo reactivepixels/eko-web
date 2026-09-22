@@ -110,6 +110,7 @@ describe("SSR smoke: no DOM present", () => {
     const mod = await import("../src/react/index");
     expect(mod.useEkoPlayer).toBeDefined();
     expect(mod.useEkoTime).toBeDefined();
+    expect(mod.useEkoWebEngine).toBeDefined();
 
     const core = await import("../src/index");
     let engine: InstanceType<typeof core.EkoWebEngine> | undefined;
@@ -117,6 +118,53 @@ describe("SSR smoke: no DOM present", () => {
       engine = new core.EkoWebEngine();
     }).not.toThrow();
     expect(engine?.state).toBe("idle");
+  });
+
+  it("useEkoWebEngine server-renders in React without starting a fetch or creating an AudioContext", async () => {
+    const react = await import("react");
+    const { renderToString } = await import("react-dom/server");
+    const mod = await import("../src/react/index");
+
+    const fetchSpy = vi.fn();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      function Player() {
+        const engine = mod.useEkoWebEngine({}, { queue: [{ id: "a", src: "/a.flac" }] });
+        const { paused, queueLength } = mod.useEkoPlayer(engine);
+        return react.createElement("span", null, `${paused ? "Play" : "Pause"} ${queueLength}`);
+      }
+      // The queue loads in an effect, which a server render never runs, so the markup
+      // shows the engine as it is before anything loads.
+      expect(renderToString(react.createElement(Player))).toContain("Play 0");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("useEkoWebEngine server-renders in Vue without starting a fetch", async () => {
+    const vue = await import("vue");
+    const { renderToString } = await import("vue/server-renderer");
+    const mod = await import("../src/vue/index");
+
+    const fetchSpy = vi.fn();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const Player = vue.defineComponent({
+        setup() {
+          const engine = mod.useEkoWebEngine({}, { queue: [{ id: "a", src: "/a.flac" }] });
+          const player = mod.useEkoPlayer(engine);
+          return () => vue.h("span", null, `queued ${player.value.queueLength}`);
+        },
+      });
+      // Inside a component the queue loads in onMounted, which never runs on the server.
+      expect(await renderToString(vue.createSSRApp(Player))).toContain("queued 0");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("importing the vue binding entry resolves, and its composables run inside a bare effectScope with no DOM and print no console warning", async () => {

@@ -54,6 +54,11 @@ export class EkoQueue {
     return this.tracks.length;
   }
 
+  /** Every track, in queue order. A copy, so the queue's own order cannot be changed through it. */
+  get list(): readonly EkoTrack[] {
+    return this.tracks.slice();
+  }
+
   get shuffle(): boolean {
     return this._shuffle;
   }

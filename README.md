@@ -120,6 +120,7 @@ engine.setRepeat("all"); // or "one" to loop the current track
 engine.next();
 engine.previous(); // steps back through what actually played, which matters under shuffle
 engine.skipTo(9); // what a playlist row's click handler calls
+engine.queue; // the tracks you queued, in queue order (a copy)
 
 engine.subscribe(() => {
   const { index, queueLength, track, lastTransition } = engine.getSnapshot();
@@ -133,34 +134,60 @@ every frame and would re-render your whole tree at 60fps. Read that from the eng
 ### React (`@rpxl/eko-web/react`)
 
 ```tsx
-import { useEkoPlayer, useEkoTime } from "@rpxl/eko-web/react";
+import { useEkoWebEngine, useEkoPlayer, useEkoTime } from "@rpxl/eko-web/react";
 
-function Transport({ engine }) {
-  const { paused, track, index, queueLength, play, pause, next } = useEkoPlayer(engine);
+const TRACKS = [
+  { id: "1", src: "/audio/01.mp3" },
+  { id: "2", src: "/audio/02.mp3" },
+];
+
+function Player() {
+  const engine = useEkoWebEngine({ transition: "gapless" }, { queue: TRACKS });
+  const { paused, index, queueLength, play, pause, next } = useEkoPlayer(engine);
   return (
-    <button onClick={paused ? play : pause}>
-      {paused ? "Play" : "Pause"} {index + 1} / {queueLength}
-    </button>
+    <>
+      <button onClick={paused ? play : pause}>
+        {paused ? "Play" : "Pause"} {index + 1} / {queueLength}
+      </button>
+      <Progress engine={engine} />
+    </>
   );
 }
 
 function Progress({ engine }) {
   const { currentTime, duration } = useEkoTime(engine); // only this re-renders per frame
-  return <progress value={currentTime} max={duration} />;
+  return <progress value={currentTime} max={duration || 1} />;
 }
 ```
+
+`useEkoWebEngine` owns the engine. It builds one when the component mounts and destroys
+it on unmount, so the `AudioContext` is released. It also survives StrictMode's
+development double mount. Options like `transition` and `crossfadeSeconds` are only read
+by the constructor, so when one changes the hook builds a new engine and carries over the
+queue, the position in it, shuffle, repeat, volume and mute. Playback stops at that
+point. The queue in the second argument is loaded once, after mount, so a server render
+never starts a fetch.
 
 `useEkoPlayer` is `useSyncExternalStore` over the engine's snapshot, so it is
 concurrent-safe and gives the right value during server rendering. `useEkoTime` is
 separate on purpose: `currentTime` changes every frame, and keeping it out of the
 snapshot means scrubbing re-renders your progress bar instead of your track list.
 
+If you would rather own the engine yourself (one shared by the whole app, say), skip
+`useEkoWebEngine` and pass your own to the other two hooks. Remember to call
+`engine.destroy()` when you are done with it.
+
 ### Vue 3 (`@rpxl/eko-web/vue`)
 
 ```vue
 <script setup>
-import { useEkoPlayer, useEkoTime } from "@rpxl/eko-web/vue";
+import { useEkoWebEngine, useEkoPlayer, useEkoTime } from "@rpxl/eko-web/vue";
 
+const TRACKS = [
+  { id: "1", src: "/audio/01.mp3" },
+  { id: "2", src: "/audio/02.mp3" },
+];
+const engine = useEkoWebEngine({ transition: "gapless" }, { queue: TRACKS });
 const player = useEkoPlayer(engine); // a readonly ref over the snapshot
 const { currentTime, duration } = useEkoTime(engine);
 </script>
@@ -169,19 +196,15 @@ const { currentTime, duration } = useEkoTime(engine);
   <button @click="player.paused ? player.play() : player.pause()">
     {{ player.paused ? "Play" : "Pause" }} {{ player.index + 1 }} / {{ player.queueLength }}
   </button>
-  <progress :value="currentTime" :max="duration" />
+  <progress :value="currentTime" :max="duration || 1" />
 </template>
 ```
 
-Teardown goes through `onScopeDispose`, so it works inside a bare `effectScope` and not
-only inside a component. The composables also accept a ref or a getter for the engine, so
-swapping engines is reactive; the React hooks take the engine directly, since a new prop
-re-renders anyway. Same concepts and same names on both sides, each in its own idiom, and
-a test compares the two so they cannot drift apart.
-
-Vue is in the first release rather than deferred for a reason: a second binding is the
-only real proof the core is framework-free. One binding can hide accidental coupling.
-Two cannot.
+`useEkoWebEngine` returns a readonly ref, which the other two composables take as is. The
+engine is destroyed when the component unmounts (or when an `effectScope` it runs in
+stops). Pass the options as a ref or a getter, for example
+`() => ({ transition: mode.value })`, and changing them rebuilds the engine the same way
+the React hook does.
 
 ### Installing
 

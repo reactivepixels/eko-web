@@ -1,7 +1,112 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import type { EkoWebEngine } from "../engine/eko-web-engine";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { EkoWebEngine } from "../engine/eko-web-engine";
 import type { EkoSnapshot } from "../engine/snapshot";
 import type { RepeatMode } from "../queue/queue";
+import type { EkoTrack, EkoWebEngineOptions } from "../types";
+import { captureCarry, engineKey, restoreCarry, type EngineCarry } from "../bindings/rebuild";
+
+/** What `useEkoWebEngine` loads into the engine it builds, once, when it first mounts. */
+export interface EkoWebEngineInit {
+  /** The tracks to queue. Ignored after the first mount: call `engine.setQueue()` for that. */
+  queue?: EkoTrack[];
+  /** Where in `queue` to start. Default: the first track. */
+  startIndex?: number;
+}
+
+/**
+ * Create an {@link EkoWebEngine} that belongs to this component: built once, destroyed on
+ * unmount, and rebuilt when an option that can only be set at construction changes.
+ *
+ * ```tsx
+ * const engine = useEkoWebEngine({ transition: "gapless" }, { queue: TRACKS });
+ * const player = useEkoPlayer(engine);
+ * ```
+ *
+ * Three things this does that a hand-written `useState` + `useEffect` pair gets wrong:
+ *
+ * - **StrictMode.** In development React mounts, unmounts and remounts every component.
+ *   Destroying the engine in that simulated unmount would leave the component holding a
+ *   dead engine, because `useState` hands the same instance back. So teardown is deferred
+ *   by one microtask and cancelled if the same engine mounts again before it runs, which
+ *   is exactly what the simulated remount does. A real unmount still destroys it.
+ * - **Construction-time options.** `transition`, `crossfadeSeconds`, `normalize`,
+ *   `targetLufs`, `fadeSeconds`, `source`, `bufferMaxBytes` and `context` are read once, by
+ *   the constructor. Changing one here builds a new engine and carries over the queue, the
+ *   position in it, shuffle, repeat, volume and mute. Playback stops at that point: the new
+ *   engine loads the same track, paused at its start. Inserts (`setInserts`) are not
+ *   carried, because their nodes belong to the old engine's `AudioContext`. Options are
+ *   compared by value, so an inline object literal does not rebuild on every render.
+ * - **The initial queue.** `init.queue` is loaded in an effect, not during render, so a
+ *   server render never starts a fetch, and a render React throws away never leaves an
+ *   engine loading audio nobody owns.
+ *
+ * `shuffle` and `repeat` in `options` are starting values only. After mount, change them
+ * with `player.setShuffle()` / `player.setRepeat()`.
+ *
+ * The returned engine's identity changes on a rebuild, so anything that listens to it
+ * directly (`engine.on(...)` in an effect) should list `engine` in its dependencies, the
+ * same as it would for any other prop.
+ */
+export function useEkoWebEngine(
+  options: EkoWebEngineOptions = {},
+  init: EkoWebEngineInit = {},
+): EkoWebEngine {
+  const key = engineKey(options);
+  const context = options.context;
+  // The constructor only assigns fields (no AudioContext until first play), so building
+  // one during render is safe on the server, and the throwaway a StrictMode double render
+  // makes holds nothing that needs releasing.
+  const [engine, setEngine] = useState(() => new EkoWebEngine(options));
+  const built = useRef({ engine, key, context });
+  const initial = useRef(init);
+  const queued = useRef(false);
+  const pendingDestroy = useRef(new Set<EkoWebEngine>());
+  const destroyed = useRef(new WeakSet<EkoWebEngine>());
+  const carry = useRef<EngineCarry | null>(null);
+
+  useEffect(() => {
+    pendingDestroy.current.delete(engine);
+    if (destroyed.current.has(engine)) {
+      // Torn down while this component stayed alive: an <Activity> that hid it and is now
+      // showing it again. Build a replacement from what the old one was doing.
+      const next = new EkoWebEngine(options);
+      if (carry.current) restoreCarry(next, carry.current);
+      built.current = { engine: next, key, context };
+      setEngine(next);
+      return;
+    }
+    if (!queued.current) {
+      queued.current = true;
+      const { queue, startIndex } = initial.current;
+      if (queue && queue.length > 0) engine.setQueue(queue, startIndex);
+    }
+    return () => {
+      pendingDestroy.current.add(engine);
+      queueMicrotask(() => {
+        if (!pendingDestroy.current.delete(engine)) return;
+        carry.current = captureCarry(engine);
+        destroyed.current.add(engine);
+        engine.destroy();
+      });
+    };
+    // `options` is deliberately left out: it only matters when an engine is built, and the
+    // rebuild effect below owns every case where it changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine]);
+
+  useEffect(() => {
+    const current = built.current;
+    if (current.key === key && current.context === context) return;
+    const next = new EkoWebEngine(options);
+    restoreCarry(next, captureCarry(current.engine));
+    built.current = { engine: next, key, context };
+    // The effect above destroys the old engine once this one has mounted in its place.
+    setEngine(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, context]);
+
+  return engine;
+}
 
 /**
  * The engine's current snapshot plus the transport it exposes, as one object.

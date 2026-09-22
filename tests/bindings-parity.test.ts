@@ -33,9 +33,9 @@ afterEach(() => {
 
 describe("React/Vue binding parity", () => {
   it("both bindings export exactly the same named exports", () => {
-    // Settled: only these two hooks/composables are exposed. `EkoPlayer`/`EkoTime` are
-    // types, erased at compile time, and never show up as runtime exports here.
-    const expected = ["useEkoPlayer", "useEkoTime"];
+    // Settled: only these three hooks/composables are exposed. `EkoPlayer`/`EkoTime`/
+    // `EkoWebEngineInit` are types, erased at compile time, and never show up here.
+    const expected = ["useEkoPlayer", "useEkoTime", "useEkoWebEngine"];
 
     expect(Object.keys(reactBinding).sort()).toEqual(expected);
     expect(Object.keys(vueBinding).sort()).toEqual(expected);

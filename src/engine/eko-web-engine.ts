@@ -264,6 +264,14 @@ export class EkoWebEngine {
   get currentIndex(): number {
     return this.tracks.currentIndex;
   }
+  /**
+   * The tracks last passed to `setQueue()`, in queue order (not shuffled play order). A copy,
+   * so changing it changes nothing: call `setQueue()` for that. This is what lets a caller
+   * rebuild an engine with different construction-time options and hand it the same queue.
+   */
+  get queue(): readonly EkoTrack[] {
+    return this.tracks.list;
+  }
   /** What happened at the most recent boundary, or null before the first one. */
   get lastTransition(): TransitionKind | null {
     return this._lastTransition;
