@@ -90,6 +90,73 @@ engine.subscribe(() => {
 binding is a few lines. The snapshot deliberately leaves out `currentTime`: it changes
 every frame and would re-render your whole tree at 60fps. Read that from the engine.
 
+### Loudness tags (`@rpxl/eko-web/replaygain`)
+
+```ts
+import { readReplayGain } from "@rpxl/eko-web/replaygain";
+
+const { gainDb, peak } = await readReplayGain("/audio/track.flac");
+engine.setQueue([{ id: "1", src: "/audio/track.flac", gainDb }]);
+```
+
+Reads ReplayGain tags out of a file's header: Vorbis comments (FLAC, Ogg Vorbis,
+Ogg FLAC), ID3v2 and APEv2 (MP3), and both MP4 layouts (the iTunes freeform
+atoms most taggers write, and the metadata-keys scheme ffmpeg writes). Gain and
+peak only, nothing else.
+
+It asks for the first 64KB with an HTTP Range request rather than pulling the
+whole file, and only fetches the tail if the head had no tags, which is where
+APEv2 and non-faststart MP4 keep theirs. A server that ignores Range just sends
+everything and that works too.
+
+A missing tag is never an error. A 404, a CORS rejection, a file that is not
+audio: all of them resolve to an empty result, because this runs on the path to
+playing a track and a thrown error there would turn a missing tag into a track
+that will not play.
+
+The engine does not import this. That is deliberate: it stays opt-in so a player
+that does not want tag parsing does not ship the parsers. Reading the tag is
+your call, and the engine takes the answer as `gainDb`.
+
+### Where normalization gets its number
+
+```ts
+new EkoWebEngine({ normalize: "auto" }); // the default
+```
+
+- `"auto"` prefers a track's `gainDb`, and measures the decoded audio when there
+  is none.
+- `"tags"` uses `gainDb` only, and leaves a track alone when it has none.
+- `"measure"` always measures and ignores `gainDb`.
+- `false` applies no normalization.
+
+`true` still means `"auto"`. Measuring needs the decoded samples, so on the
+streaming path (long files played through an `<audio>` element) there is nothing
+to measure: `"auto"` falls back to unity gain there and warns once, not once per
+track.
+
+### Lock screen and media keys (`@rpxl/eko-web/media-session`)
+
+```ts
+import { attachMediaSession } from "@rpxl/eko-web/media-session";
+
+const detach = attachMediaSession(engine, {
+  metadata: (track) => ({ title: track.id, artist: "...", artwork: [...] }),
+});
+```
+
+Wires `navigator.mediaSession` to the engine: the transport actions, the
+metadata, and the position state on a throttle rather than every frame.
+
+The reason this is a module and not three lines in your app: a gapless boundary
+changes track with no `src` swap and no element event, so hand-rolled wiring
+never fires and the lock screen shows the wrong song for the rest of the queue.
+This listens to the engine instead, so it stays right.
+
+It feature-detects, so it is a harmless no-op in a browser without the API, and
+it registers each action independently, because browsers support different
+subsets and one unsupported action should not take the rest down with it.
+
 ### Drop into an existing `<audio>`-based player
 
 eko-web ships an `HTMLMediaElement`-compatible facade (`@rpxl/eko-web/element`) so it slots into
@@ -102,13 +169,13 @@ see the docs.)
 **v0.1, feature-complete engine, not yet published to npm.** Done: the engine (buffer
 playback with true gapless queueing, crossfade, a streaming fallback for long files,
 loudness normalization from a tag or measured, click-free play/pause/seek), the queue
-(shuffle, repeat, history), coded errors you can branch on, the `EkoAudioElement` facade
-(`@rpxl/eko-web/element`), and the ear-test player in `examples/player/`. See
+(shuffle, repeat, history), the `replaygain` and `media-session` subpaths, coded errors
+you can branch on, the `EkoAudioElement` facade (`@rpxl/eko-web/element`), and the
+ear-test player in `examples/player/`. See
 [`examples/README.md`](./examples/README.md); it needs a build first, it is not a no-build
-page. 223 unit tests, dual ESM/CJS build with types.
+page. 359 unit tests, dual ESM/CJS build with types.
 
-Not yet: React and Vue bindings, a `media-session` subpath for OS media keys, and a
-WebCodecs source strategy.
+Not yet: React and Vue bindings, and a WebCodecs source strategy.
 
 The example player is the fastest way to hear the parts a test can't prove. Load a few
 files, then try crossfade against gapless against gap on the same boundary, and shuffle
