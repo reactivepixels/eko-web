@@ -1,11 +1,46 @@
-# eko-web
+<div align="center">
 
-**EKO's web playback engine**: a small, framework-agnostic [Web Audio][webaudio] engine
-that gives any web player **true gapless playback** and **loudness normalization
-(ReplayGain/LUFS)** behind a clean, `<audio>`-compatible API.
+# EKO Web
+
+**A web audio engine you build real players with.**
+
+True gapless playback, crossfade, loudness normalization and ReplayGain tags.
+About 12&nbsp;kB, no runtime dependencies, and no framework of its own.
+
+[![npm](https://img.shields.io/npm/v/@rpxl/eko-web?color=ef6a1e&labelColor=2c2b27)](https://www.npmjs.com/package/@rpxl/eko-web)
+[![CI](https://img.shields.io/github/actions/workflow/status/reactivepixels/eko-web/ci.yml?branch=main&labelColor=2c2b27)](https://github.com/reactivepixels/eko-web/actions)
+[![license](https://img.shields.io/npm/l/@rpxl/eko-web?color=2c2b27&labelColor=2c2b27)](./LICENSE)
+[![bundle](https://img.shields.io/bundlephobia/minzip/@rpxl/eko-web?label=core&labelColor=2c2b27)](https://bundlephobia.com/package/@rpxl/eko-web)
+
+[Live demo](https://reactivepixels.com/eko-web/) &nbsp;·&nbsp;
+[Documentation](https://reactivepixels.com/eko-web/docs) &nbsp;·&nbsp;
+[npm](https://www.npmjs.com/package/@rpxl/eko-web)
+
+<img src="https://raw.githubusercontent.com/reactivepixels/eko-web/main/.github/media/player.gif" alt="The player running, with a live segmented spectrum" width="760">
+
+<sub>The demo player in `examples/`, running the library. Not a mockup.</sub>
+
+</div>
+
+```bash
+npm install @rpxl/eko-web
+```
+
+```ts
+import { EkoWebEngine } from "@rpxl/eko-web";
+
+const engine = new EkoWebEngine(); // gapless by default
+engine.setQueue([
+  { id: "1", src: "/audio/01.flac" },
+  { id: "2", src: "/audio/02.flac" }, // starts the instant track 1 ends
+]);
+await engine.play(); // call from a click: browsers require it
+```
+
+---
 
 It's the web-grade sibling of the native [EKO][eko] player. EKO on the desktop is
-bit-perfect; **eko-web is not, and doesn't pretend to be**. See the scope below.
+bit-perfect; **EKO Web is not, and doesn't pretend to be**. See the scope below.
 
 ## What it does (and what it honestly can't)
 
@@ -49,6 +84,11 @@ _fidelity_.** If you need bit-perfect, that's what the native EKO app is for.
 ```bash
 npm install @rpxl/eko-web   # or: pnpm add @rpxl/eko-web
 ```
+
+<div align="center">
+<img src="https://raw.githubusercontent.com/reactivepixels/eko-web/main/.github/media/player-light.jpg" alt="The demo player, light theme" width="46%">
+<img src="https://raw.githubusercontent.com/reactivepixels/eko-web/main/.github/media/player-dark.jpg" alt="The demo player, dark theme" width="46%">
+</div>
 
 ## Quick start
 
