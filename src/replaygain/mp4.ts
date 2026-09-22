@@ -1,18 +1,30 @@
 import type { ReplayGainTags } from "./types";
 
 /**
- * Reads ReplayGain loudness tags out of an MP4/M4A file's iTunes-style freeform
- * atoms. Pure byte parsing: no engine dependency, no work performed at import time
- * (this module has no side effects).
+ * Reads ReplayGain loudness tags out of an MP4/M4A file's `moov.udta.meta.ilst`, which
+ * real files carry in either of two unrelated layouts. Pure byte parsing: no engine
+ * dependency, no work performed at import time (this module has no side effects).
  *
  * MP4 is nested atoms: each one is a 4-byte big-endian size (the WHOLE atom, header
- * included), a 4-byte ASCII type, then a payload. ReplayGain lives at
- * `moov.udta.meta.ilst`, inside a freeform atom typed `----` whose payload is itself
- * three child atoms: `mean` ("com.apple.iTunes", identifying the freeform namespace),
- * `name` (the key, e.g. "replaygain_track_gain") and `data` (a 4-byte type indicator,
- * a 4-byte locale, then the value bytes).
+ * included), a 4-byte ASCII type, then a payload.
  *
- * Three traps this format has that the other three ReplayGain formats in this
+ * **The iTunes freeform scheme** (what foobar2000 and most taggers write): each
+ * `ilst` child is a freeform atom typed `----`, whose payload is itself three child
+ * atoms: `mean` ("com.apple.iTunes", identifying the freeform namespace), `name` (the
+ * key, e.g. "replaygain_track_gain") and `data` (a 4-byte type indicator, a 4-byte
+ * locale, then the value bytes). The key and the value live together in one atom.
+ *
+ * **The QuickTime metadata-keys scheme** (what ffmpeg writes, e.g. with
+ * `-movflags use_metadata_tags`): the key and the value live in two DIFFERENT atoms,
+ * joined by position rather than by name. `keys`, a sibling of `ilst` under `meta`,
+ * lists key NAMES in order; each `ilst` child's own 4-byte "type" field is not an
+ * ASCII fourCC here but a 1-based big-endian INDEX into that `keys` list, and its
+ * payload is a single `data` atom in the exact same shape as the freeform scheme's.
+ * `meta`'s `hdlr` atom's handler type tells the two apart: `mdta` means this scheme,
+ * `mdir` means the freeform one. When `hdlr` is missing or its handler type is
+ * neither, both schemes are tried (see `parseMp4`).
+ *
+ * Four traps this format has that the other three ReplayGain formats in this
  * directory don't:
  *
  * 1. `meta` is not a plain container: its payload carries a 4-byte version/flags
@@ -40,19 +52,30 @@ import type { ReplayGainTags } from "./types";
  * to be at least 16 (its own header's length); and the plain case requires the
  * declared size to be at least 8 (its own header's length). Every branch therefore
  * advances the cursor by at least 8 bytes, so the walk in `walkChildren` cannot hang.
+ * `parseKeyNames` below walks `keys`' own entries independently of `walkChildren` (each
+ * entry is a 4-byte size + 4-byte namespace + name, not a full nested atom), and is
+ * built to the same rule: an entry is only accepted, and the cursor only advanced past
+ * it, once its declared size is proven to be at least 8 (its own size+namespace
+ * fields) and to not run past `keys`' own end. Whichever check fails first, the walk
+ * stops and returns the names already read, exactly like `walkChildren` stopping at a
+ * malformed child.
  *
  * Every read is bounds-checked against the buffer and against the enclosing atom's
  * own declared boundary. A malformed or truncated file must never throw: it returns
  * `{}`, or whatever tags were already read before truncation cut it off, because a
  * broken tag can never be allowed to take down playback.
  *
- * There is no encoder on this machine that writes these tags into an MP4/M4A file:
- * ffmpeg silently drops `-metadata REPLAYGAIN_*` for this container, and
- * AtomicParsley, mp4tags and mid3v2 are all absent. So, like `apev2.ts`,
- * `tests/fixtures/replaygain/build.ts`'s `buildMp4` hand-builds atom bytes from the
- * same reading of the spec this parser is written from, rather than from a captured
- * real file. See that file's module comment, and `tests/replaygain/mp4.test.ts`'s,
- * for what that means for how much this parser can be said to be verified.
+ * There is no encoder on this machine that writes the freeform scheme into an
+ * MP4/M4A file: ffmpeg silently drops `-metadata REPLAYGAIN_*` for this container
+ * unless told to write the OTHER (keys) scheme, and AtomicParsley, mp4tags and mid3v2
+ * are all absent. So, like `apev2.ts`, `tests/fixtures/replaygain/build.ts`'s
+ * `buildMp4` hand-builds freeform-scheme atom bytes from the same reading of the spec
+ * this parser is written from, rather than from a captured real file; see that file's
+ * module comment, and `tests/replaygain/mp4.test.ts`'s, for what that means for how
+ * much of this parser's freeform path can be said to be verified. The keys scheme is
+ * different: `tests/fixtures/replaygain/tone-keys.m4a` is genuine
+ * `ffmpeg -movflags use_metadata_tags` output, so that half of this parser is checked
+ * against real encoder bytes, independent of this file's own reading of the spec.
  */
 
 const HEADER_SIZE = 8; // 4-byte size + 4-byte type
@@ -62,6 +85,19 @@ const DATA_TYPE_LOCALE_SIZE = 8; // 4-byte type indicator + 4-byte locale, befor
 const FREEFORM_TYPE = "----";
 const MEAN_APPLE_ITUNES = "com.apple.itunes"; // compared lowercased
 const DATA_TYPE_UTF8_TEXT = 1;
+
+const HDLR_TYPE = "hdlr";
+const KEYS_TYPE = "keys";
+// Within hdlr's payload: 4-byte version/flags, then 4-byte predefined (both ignored),
+// then the 4-byte handler type this parser actually dispatches on.
+const HDLR_HANDLER_TYPE_OFFSET = 8;
+const HANDLER_MDTA = "mdta"; // the keys scheme
+const HANDLER_MDIR = "mdir"; // the freeform scheme
+const KEYS_VERSION_FLAGS_SIZE = 4;
+const KEYS_ENTRY_COUNT_SIZE = 4;
+// Within a `keys` entry: 4-byte entry size (itself + namespace + name) + 4-byte
+// namespace, before the key name that fills out the rest of the entry.
+const KEYS_ENTRY_HEADER_SIZE = 8;
 
 function fourCC(bytes: Uint8Array, offset: number): string | undefined {
   const b0 = bytes[offset];
@@ -212,6 +248,32 @@ function parseGainValue(value: string): number | undefined {
 }
 
 /**
+ * Reads a `data` atom's own value (4-byte type indicator, 4-byte locale, then the
+ * value bytes) and parses it as a ReplayGain number. Returns undefined for anything
+ * that isn't a recognized-as-text value: too short to hold the type+locale fields, a
+ * type indicator other than UTF-8 text, or text that doesn't parse to a finite number.
+ * Shared by both schemes: a `data` atom has the identical shape whether it's reached
+ * via a freeform `----` atom's own child or via a keys-scheme `ilst` entry's child.
+ */
+function readDataAtomValue(bytes: Uint8Array, data: AtomHeader): number | undefined {
+  if (data.payloadStart + DATA_TYPE_LOCALE_SIZE > data.atomEnd) return undefined; // no room for type+locale
+  const typeIndicator = readUint32BE(bytes, data.payloadStart, data.atomEnd);
+  if (typeIndicator !== DATA_TYPE_UTF8_TEXT) return undefined;
+
+  const valueBytes = bytes.subarray(data.payloadStart + DATA_TYPE_LOCALE_SIZE, data.atomEnd);
+  const value = new TextDecoder("utf-8", { fatal: false }).decode(valueBytes);
+  return parseGainValue(value);
+}
+
+/** Writes `parsed` into `tags` under whichever of the two recognized ReplayGain keys
+ * `lowerKey` (already lower-cased) is. Callers only reach this after already
+ * confirming `lowerKey` is one of the two, so the `else` is exhaustive, not a guess. */
+function assignRecognizedKey(lowerKey: string, parsed: number, tags: ReplayGainTags): void {
+  if (lowerKey === "replaygain_track_gain") tags.gainDb = parsed;
+  else tags.peak = parsed;
+}
+
+/**
  * Reads one freeform `----` atom's `mean`/`name`/`data` children and, if it's a
  * recognized ReplayGain key scoped to the "com.apple.iTunes" freeform namespace,
  * writes the parsed value into `tags`. Silently does nothing for anything else found
@@ -238,23 +300,112 @@ function readFreeformInto(bytes: Uint8Array, freeform: AtomHeader, tags: ReplayG
   const lowerKey = key.toLowerCase();
   if (lowerKey !== "replaygain_track_gain" && lowerKey !== "replaygain_track_peak") return;
 
-  if (data.payloadStart + DATA_TYPE_LOCALE_SIZE > data.atomEnd) return; // no room for type+locale
-  const typeIndicator = readUint32BE(bytes, data.payloadStart, data.atomEnd);
-  if (typeIndicator !== DATA_TYPE_UTF8_TEXT) return;
-
-  const valueBytes = bytes.subarray(data.payloadStart + DATA_TYPE_LOCALE_SIZE, data.atomEnd);
-  const value = new TextDecoder("utf-8", { fatal: false }).decode(valueBytes);
-  const parsed = parseGainValue(value);
+  const parsed = readDataAtomValue(bytes, data);
   if (parsed === undefined) return;
 
-  if (lowerKey === "replaygain_track_gain") tags.gainDb = parsed;
-  else tags.peak = parsed;
+  assignRecognizedKey(lowerKey, parsed, tags);
+}
+
+/** Reads `hdlr`'s handler type (the 4 bytes after its version/flags and predefined
+ * fields), bounds-checked against `hdlr`'s own end. Returns undefined if `hdlr` is too
+ * short to hold that field, which callers treat the same as "no hdlr at all": try
+ * both schemes rather than guessing. */
+function readHandlerType(bytes: Uint8Array, hdlr: AtomHeader): string | undefined {
+  const offset = hdlr.payloadStart + HDLR_HANDLER_TYPE_OFFSET;
+  if (offset + 4 > hdlr.atomEnd) return undefined;
+  return fourCC(bytes, offset);
 }
 
 /**
- * Parses ReplayGain track gain/peak out of an MP4/M4A file's `moov.udta.meta.ilst`
- * freeform atoms. Returns `{}` when any atom in that chain is missing, malformed or
- * truncated, or when `ilst` carries no recognized ReplayGain freeform atom: it never
+ * Parses a `keys` atom's entries into an ordered list of key names (`names[0]` is key
+ * index 1, `names[1]` is index 2, and so on: the keys scheme's indices are 1-based).
+ *
+ * Each entry is a 4-byte entry size (covering the size field itself, the 4-byte
+ * namespace that follows it, and the name), then the namespace, then the name filling
+ * out the rest of the declared size. This is walked by hand rather than through
+ * `walkChildren`/`readAtomHeader` because an entry isn't a nested atom (it has no
+ * separate type field to recurse through; its "type", such as it is, is the constant
+ * `"mdta"` namespace baked into the format, not a distinguishing child type).
+ *
+ * Stops and returns whatever names were already read, per this parser's truncation
+ * convention, as soon as an entry doesn't fit: `entrySize` unreadable, declared
+ * smaller than its own 8-byte size+namespace header (which would either read the next
+ * entry's bytes as this one's name, or, at `entrySize < 8`, fail to strictly advance
+ * the cursor and hang), or its declared span running past `keys`' own end. Every
+ * accepted entry advances the cursor by exactly its own `entrySize`, which is proven
+ * `>= KEYS_ENTRY_HEADER_SIZE` (8) before it is used, so this loop cannot hang on a
+ * malformed `keys` atom any more than `walkChildren` can on a malformed container.
+ */
+function parseKeyNames(bytes: Uint8Array, keys: AtomHeader): string[] {
+  const names: string[] = [];
+  let cursor = keys.payloadStart + KEYS_VERSION_FLAGS_SIZE + KEYS_ENTRY_COUNT_SIZE;
+  while (cursor + KEYS_ENTRY_HEADER_SIZE <= keys.atomEnd) {
+    const entrySize = readUint32BE(bytes, cursor, keys.atomEnd);
+    if (entrySize === undefined || entrySize < KEYS_ENTRY_HEADER_SIZE) return names;
+    const entryEnd = cursor + entrySize;
+    if (entryEnd > keys.atomEnd) return names;
+
+    const nameStart = cursor + KEYS_ENTRY_HEADER_SIZE;
+    names.push(
+      new TextDecoder("utf-8", { fatal: false }).decode(bytes.subarray(nameStart, entryEnd)),
+    );
+    cursor = entryEnd; // strictly > cursor: entrySize >= KEYS_ENTRY_HEADER_SIZE (8), checked above
+  }
+  return names;
+}
+
+/** Converts an `ilst` child's own 4-byte "type" field, as the keys scheme (ab)uses it,
+ * back into the big-endian integer it actually is. `AtomHeader.type` is always exactly
+ * 4 UTF-16 code units in the 0..255 range (produced by `fourCC`'s
+ * `String.fromCharCode` from 4 real bytes), so this exactly reverses that encoding
+ * rather than approximating it. */
+function typeAsIndex(type: string): number {
+  let value = 0;
+  for (let i = 0; i < 4; i++) {
+    value = (value << 8) | (type.charCodeAt(i) & 0xff);
+  }
+  return value >>> 0;
+}
+
+/**
+ * Reads one keys-scheme `ilst` child: resolves its numeric "type" to a key name via
+ * `keyNames` (1-based), and if that name is a recognized ReplayGain key, reads its
+ * `data` child's value and writes it into `tags`. Silently does nothing otherwise (an
+ * out-of-range index, an unrecognized key name, a missing or unparseable `data`
+ * value): mirrors `readFreeformInto`'s convention of never letting one uninteresting
+ * or malformed `ilst` child stop the rest from being read.
+ */
+function readKeysEntryInto(
+  bytes: Uint8Array,
+  entry: AtomHeader,
+  keyNames: string[],
+  tags: ReplayGainTags,
+): void {
+  const index = typeAsIndex(entry.type);
+  if (index < 1 || index > keyNames.length) return;
+  const key = keyNames[index - 1];
+  if (key === undefined) return;
+  const lowerKey = key.toLowerCase();
+  if (lowerKey !== "replaygain_track_gain" && lowerKey !== "replaygain_track_peak") return;
+
+  const data = findChild(bytes, entry.payloadStart, entry.atomEnd, "data");
+  if (!data) return;
+
+  const parsed = readDataAtomValue(bytes, data);
+  if (parsed === undefined) return;
+
+  assignRecognizedKey(lowerKey, parsed, tags);
+}
+
+/**
+ * Parses ReplayGain track gain/peak out of an MP4/M4A file's `moov.udta.meta.ilst`,
+ * trying the iTunes freeform scheme, the QuickTime metadata-keys scheme, or both,
+ * depending on `meta`'s `hdlr` atom: a handler type of `mdir` means freeform only,
+ * `mdta` means keys only, and a missing `hdlr` (or one this parser doesn't recognize)
+ * means both are tried, since a real but nonstandard file is more likely to actually
+ * carry one of the two known shapes than a third, unknown one. Returns `{}` when any
+ * atom in the shared `moov`/`udta`/`meta`/`ilst` chain is missing, malformed or
+ * truncated, or when neither scheme finds a recognized ReplayGain tag: it never
  * throws.
  */
 export function parseMp4(bytes: Uint8Array): ReplayGainTags {
@@ -276,10 +427,27 @@ export function parseMp4(bytes: Uint8Array): ReplayGainTags {
     const ilst = findChild(bytes, metaChildrenStart, meta.atomEnd, "ilst");
     if (!ilst) return {};
 
+    const hdlr = findChild(bytes, metaChildrenStart, meta.atomEnd, HDLR_TYPE);
+    const handlerType = hdlr ? readHandlerType(bytes, hdlr)?.toLowerCase() : undefined;
+
     const tags: ReplayGainTags = {};
-    walkChildren(bytes, ilst.payloadStart, ilst.atomEnd, (child) => {
-      if (child.type === FREEFORM_TYPE) readFreeformInto(bytes, child, tags);
-    });
+
+    if (handlerType !== HANDLER_MDTA) {
+      walkChildren(bytes, ilst.payloadStart, ilst.atomEnd, (child) => {
+        if (child.type === FREEFORM_TYPE) readFreeformInto(bytes, child, tags);
+      });
+    }
+
+    if (handlerType !== HANDLER_MDIR) {
+      const keys = findChild(bytes, metaChildrenStart, meta.atomEnd, KEYS_TYPE);
+      if (keys) {
+        const keyNames = parseKeyNames(bytes, keys);
+        walkChildren(bytes, ilst.payloadStart, ilst.atomEnd, (child) => {
+          readKeysEntryInto(bytes, child, keyNames, tags);
+        });
+      }
+    }
+
     return tags;
   } catch {
     return {};

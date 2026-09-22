@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import { parseMp4 } from "../../src/replaygain/mp4";
-import { buildMp4 } from "../fixtures/replaygain/build";
+import { buildMp4, buildMp4Keys } from "../fixtures/replaygain/build";
 
 /**
  * There is no real-encoder-produced MP4/M4A fixture here (see build.ts's module
@@ -339,5 +340,273 @@ describe("MP4/M4A freeform atoms", () => {
     const tag = new Uint8Array(moov);
 
     expect(parseMp4(tag)).toEqual({});
+  });
+});
+
+/**
+ * ffmpeg writes ReplayGain into a DIFFERENT MP4 tag layout than the iTunes freeform
+ * scheme above: `moov.udta.meta`'s `hdlr` atom declares a handler type of "mdta" (not
+ * "mdir"), and the key and the value live in two separate atoms instead of one
+ * self-describing `----` atom: `keys` lists key NAMES, and each `ilst` child's own
+ * 4-byte "type" field is a 1-based INDEX into that list rather than an ASCII fourCC.
+ *
+ * `tone-keys.m4a` is genuine `ffmpeg -movflags use_metadata_tags` output (its
+ * generating command is in mp4.ts's module comment) and is the first real,
+ * encoder-produced MP4 fixture in this suite: every test above this point is built
+ * from the same reading of the spec as the parser it tests, so a misreading would make
+ * both sides agree and every test would still pass. The real-fixture tests below are
+ * the first proof, independent of `mp4.ts`, that the shared container walk (the `ftyp`
+ * sniff, the `moov`/`udta` descent, and above all `meta`'s 4-byte version/flags skip)
+ * is actually right, not just internally consistent with the parser reading it.
+ */
+const load = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(new URL(`../fixtures/replaygain/${name}`, import.meta.url)));
+
+/** Same helper as vorbis.test.ts's: replaces one occurrence of an ASCII substring with
+ * another of the exact same length, in a copy of `bytes`, so no length-prefixed field
+ * elsewhere in the real fixture needs patching too. Throws if the substring is missing
+ * or occurs more than once, so a fixture change that breaks that assumption fails
+ * loudly here instead of silently mutating the wrong bytes. */
+function replaceAsciiOnce(bytes: Uint8Array, find: string, replace: string): Uint8Array {
+  if (find.length !== replace.length) {
+    throw new Error("replaceAsciiOnce requires equal-length strings");
+  }
+  let at = -1;
+  for (let i = 0; i + find.length <= bytes.length; i++) {
+    let matches = true;
+    for (let j = 0; j < find.length; j++) {
+      if (bytes[i + j] !== find.charCodeAt(j)) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      if (at !== -1) throw new Error(`"${find}" occurs more than once in the fixture`);
+      at = i;
+    }
+  }
+  if (at === -1) throw new Error(`"${find}" not found in the fixture`);
+  const mutated = bytes.slice();
+  for (let j = 0; j < replace.length; j++) {
+    mutated[at + j] = replace.charCodeAt(j);
+  }
+  return mutated;
+}
+
+/** Finds the offset of the (unique) atom whose 4-byte ASCII type marker is `fourCC`,
+ * by locating that marker and backing up over its own 4-byte size field. Throws if the
+ * marker is missing or ambiguous: every fixture this is used against is built with at
+ * most one atom of the relevant type, and no key name in these tests spells "keys",
+ * "ilst" or "hdlr", so a throw here means the fixture changed, not a false match. This
+ * is what lets the tests below reach into a `buildMp4Keys` fixture without hardcoding
+ * byte offsets that would silently go stale the moment key-name lengths change. */
+function findAtomOffset(bytes: Uint8Array, fourCC: string): number {
+  const marker = asciiBytes(fourCC);
+  let at = -1;
+  for (let i = 0; i + marker.length <= bytes.length; i++) {
+    let matches = true;
+    for (let j = 0; j < marker.length; j++) {
+      if (bytes[i + j] !== marker[j]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      if (at !== -1) throw new Error(`"${fourCC}" occurs more than once`);
+      at = i;
+    }
+  }
+  if (at === -1) throw new Error(`"${fourCC}" not found`);
+  return at - 4; // back up over this atom's own 4-byte size field
+}
+
+function rawFreeformItem(key: string, value: string): number[] {
+  function rawAtom(type: string, payload: number[]): number[] {
+    return [...u32BE(8 + payload.length), ...asciiBytes(type), ...payload];
+  }
+  const mean = rawAtom("mean", [...u32BE(0), ...asciiBytes("com.apple.iTunes")]);
+  const name = rawAtom("name", [...u32BE(0), ...asciiBytes(key)]);
+  const data = rawAtom("data", [...u32BE(1), ...u32BE(0), ...asciiBytes(value)]);
+  return rawAtom("----", [...mean, ...name, ...data]);
+}
+
+/** A keys-scheme `ilst` entry whose 4-byte "type" field is `index` (like a real one),
+ * but whose payload is empty: no `data` child at all. Used to prove that an entry
+ * missing its `data` atom is skipped, not left to throw and take the rest of an
+ * already-successful parse down with it (this parser's `moov`-to-`ilst` walk is one
+ * big `try`, so an uncaught exception anywhere in it discards tags already found). */
+function rawKeysEntryWithoutData(index: number): number[] {
+  return [...u32BE(8), ...u32BE(index)]; // header only: payloadStart === atomEnd
+}
+
+/**
+ * `tone-keys.m4a`'s verified atom tree (dumped from the actual bytes; the generating
+ * ffmpeg command is in mp4.ts's module comment):
+ *
+ *   moov  size=972 @1329
+ *     udta  size=251 @2050
+ *       meta  size=243 @2058        <- 4-byte version/flags before its children
+ *         hdlr  size=33 @2070       <- handler type "mdta" at byte offset 2086
+ *         keys  size=89 @2103
+ *         ilst  size=109 @2192
+ *
+ * HANDLER_TYPE_OFFSET is the only raw offset used against this real file below (to
+ * corrupt hdlr's handler-type field specifically); every test using it asserts the
+ * premise first.
+ */
+const HDLR_OFFSET = 2070;
+const HANDLER_TYPE_OFFSET =
+  HDLR_OFFSET + 8 /* hdlr's own header */ + 4 /* version/flags */ + 4; /* predefined */
+
+describe("MP4 keys scheme (ffmpeg / QuickTime metadata)", () => {
+  it("reads gain and peak from a real ffmpeg-tagged file", () => {
+    expect(parseMp4(load("tone-keys.m4a"))).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("matches a lower-case key the same as upper case, against the real fixture", () => {
+    const tag = load("tone-keys.m4a");
+    const mutated = replaceAsciiOnce(tag, "REPLAYGAIN_TRACK_GAIN", "replaygain_track_gain");
+    expect(parseMp4(mutated)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("still finds the tags when the real file's handler type is unrecognized", () => {
+    // hdlr's handler type is read, not guessed: an unrecognized value must fall back
+    // to trying both schemes, per the brief's dispatch rule, rather than giving up.
+    const tag = load("tone-keys.m4a");
+    const actual = Array.from(tag.subarray(HANDLER_TYPE_OFFSET, HANDLER_TYPE_OFFSET + 4))
+      .map((b) => String.fromCharCode(b))
+      .join("");
+    expect(actual).toBe("mdta"); // premise
+    const mutated = tag.slice();
+    const unknown = asciiBytes("xxxx");
+    for (let i = 0; i < 4; i++) mutated[HANDLER_TYPE_OFFSET + i] = unknown[i] as number;
+    expect(parseMp4(mutated)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("does not read the keys scheme when the real file's handler is explicitly mdir", () => {
+    // Forcing hdlr to say "mdir" (the freeform scheme's own handler) on this keys-only
+    // file must turn the keys scheme OFF rather than fall back to it: there is no
+    // freeform "----" atom anywhere in this file, so the correct result is {}, not a
+    // silently-still-working keys read.
+    const tag = load("tone-keys.m4a");
+    const mutated = tag.slice();
+    const mdir = asciiBytes("mdir");
+    for (let i = 0; i < 4; i++) mutated[HANDLER_TYPE_OFFSET + i] = mdir[i] as number;
+    expect(parseMp4(mutated)).toEqual({});
+  });
+
+  it("reads gain and peak from a built keys-scheme fixture", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE });
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("matches keys case-insensitively in a built fixture", () => {
+    const tag = buildMp4Keys({
+      REPLAYGAIN_TRACK_GAIN: GAIN_VALUE,
+      REPLAYGAIN_TRACK_PEAK: PEAK_VALUE,
+    });
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
+
+  it("falls back to the keys scheme when hdlr is missing entirely", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE }, { includeHdlr: false });
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5 });
+  });
+
+  it("matches an upper-case handler type the same as lower case", () => {
+    // The spec's handler-type values are conventionally lower case ("mdta"/"mdir"),
+    // and every other fixture in this file writes them that way. A weaker version of
+    // this test (just an upper-case "MDTA" fixture with no embedded freeform atom)
+    // does NOT actually distinguish a case-sensitive comparison from a correct one:
+    // when the handler type matches neither known constant, this parser's OWN
+    // "missing or unrecognized handler" rule already falls back to trying both
+    // schemes, which happens to still find the keys-scheme tag anyway, masking the
+    // bug. This version embeds a freeform atom for a DIFFERENT (non-overlapping) key
+    // under the same ilst so that "both schemes ran" is observable: a case-sensitive
+    // comparison would treat "MDTA" as unrecognized, read the embedded freeform atom
+    // too, and leak `peak` into the result even though only the keys scheme should
+    // have run.
+    const embeddedFreeform = rawFreeformItem(PEAK_KEY, PEAK_VALUE);
+    const tag = buildMp4Keys(
+      { [GAIN_KEY]: GAIN_VALUE },
+      { handlerType: "MDTA", extraIlstAtoms: embeddedFreeform },
+    );
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5 });
+  });
+
+  it("ignores an ilst entry whose index is 0 (keys is 1-based, so 0 is out of range)", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE });
+    const ilstOffset = findAtomOffset(tag, "ilst");
+    const indexOffset = ilstOffset + 8 /* ilst's own header */ + 4; /* entry's own size field */
+    expect(readU32BE(tag, indexOffset)).toBe(1); // premise
+    const patched = patchU32BE(tag, indexOffset, 0);
+    expect(parseMp4(patched)).toEqual({});
+  });
+
+  it("ignores an ilst entry whose index is past the end of keys", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE });
+    const ilstOffset = findAtomOffset(tag, "ilst");
+    const indexOffset = ilstOffset + 8 + 4;
+    const patched = patchU32BE(tag, indexOffset, 99);
+    expect(parseMp4(patched)).toEqual({});
+  });
+
+  it("ignores a keys entry whose resolved name is not a recognized ReplayGain key", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE, some_other_tag: "1.23" });
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5 });
+  });
+
+  it("keeps an already-found tag when a later keys entry has no data atom at all", () => {
+    // The extra entry below still resolves to a recognized key (index 1, the same
+    // GAIN_KEY the real entry already matched), so this specifically exercises the
+    // missing-`data`-child guard rather than the unrecognized-index/name guards above.
+    // Without that guard, reading `data.payloadStart` off `undefined` throws, and
+    // because this parser's whole `moov`-to-`ilst` walk runs inside one `try`, that
+    // exception would discard the gainDb the FIRST (real) entry already found, not
+    // just skip the second (malformed) one.
+    const tag = buildMp4Keys(
+      { [GAIN_KEY]: GAIN_VALUE },
+      { extraIlstAtoms: rawKeysEntryWithoutData(1) },
+    );
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5 });
+  });
+
+  it("returns {} rather than hanging when a keys entry declares a size of 0", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE });
+    const keysOffset = findAtomOffset(tag, "keys");
+    const firstEntrySizeOffset =
+      keysOffset + 8 /* header */ + 4 /* version/flags */ + 4; /* count */
+    expect(readU32BE(tag, firstEntrySizeOffset)).not.toBe(0); // premise: a real size
+    const patched = patchU32BE(tag, firstEntrySizeOffset, 0);
+    expect(parseMp4(patched)).toEqual({});
+  });
+
+  it("stops reading keys, without hanging, when an entry's declared size runs past keys' own end", () => {
+    const tag = buildMp4Keys({ [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE });
+    const keysOffset = findAtomOffset(tag, "keys");
+    const firstEntrySizeOffset = keysOffset + 8 + 4 + 4;
+    const original = readU32BE(tag, firstEntrySizeOffset);
+    const patched = patchU32BE(tag, firstEntrySizeOffset, original + 10_000);
+    // Neither key resolves (the first entry's declared span swallows the rest of the
+    // keys atom, including the second entry), so neither ilst index can match a name.
+    expect(parseMp4(patched)).toEqual({});
+  });
+
+  it("does not read an embedded freeform atom when the handler explicitly says mdta", () => {
+    const wrongFreeform = rawFreeformItem(GAIN_KEY, "-1.00 dB"); // a different, wrong value
+    const tag = buildMp4Keys(
+      { [GAIN_KEY]: GAIN_VALUE },
+      { handlerType: "mdta", extraIlstAtoms: wrongFreeform },
+    );
+    expect(parseMp4(tag)).toEqual({ gainDb: -6.5 }); // the keys-scheme value, not the freeform one
+  });
+
+  it("does not read keys-scheme entries when the handler explicitly says mdir", () => {
+    const freeform = rawFreeformItem(PEAK_KEY, PEAK_VALUE);
+    const tag = buildMp4Keys(
+      { [GAIN_KEY]: GAIN_VALUE }, // would resolve fine via the keys scheme on its own
+      { handlerType: "mdir", extraIlstAtoms: freeform },
+    );
+    expect(parseMp4(tag)).toEqual({ peak: 0.988525 }); // only the freeform atom is read
   });
 });

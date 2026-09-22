@@ -185,3 +185,116 @@ export function buildMp4(items: Record<string, string>): Uint8Array {
   const moov = atom("moov", udta);
   return new Uint8Array(moov);
 }
+
+/**
+ * Hand-built MP4/M4A atom bytes for the OTHER real tag layout: the QuickTime
+ * metadata-keys scheme ffmpeg writes (`-movflags use_metadata_tags`), as opposed to
+ * the iTunes freeform scheme `buildMp4` above builds. Unlike that one, this layout IS
+ * backed by a real encoder's output: `tests/fixtures/replaygain/tone-keys.m4a`, dumped
+ * byte-for-byte in `mp4.ts`'s module comment and in `mp4.test.ts`'s keys-scheme
+ * `describe` block. This builder exists alongside that real fixture to reach cases the
+ * real file can't: a missing/unrecognized handler, a truncated or oversized `keys`
+ * entry, an out-of-range `ilst` index, and a file that carries both schemes at once.
+ *
+ * The three atoms this layout adds inside `meta`, alongside `ilst` (same shape as
+ * `buildMp4`'s: still a plain container, no version/flags field of its own):
+ *
+ *   `hdlr` atom: 4-byte version/flags (zero), 4-byte predefined (zero), 4-byte
+ *                handler type ("mdta" for this scheme, "mdir" for the freeform one),
+ *                12 bytes reserved (zero), then a single null byte (empty name)
+ *   `keys` atom: 4-byte version/flags (zero), 4-byte entry count, then that many
+ *                entries back to back:
+ *                  4-byte entry size (the WHOLE entry: this field + namespace + name)
+ *                  4-byte namespace (always "mdta")
+ *                  N bytes key name, filling the entry out to its declared size
+ *   `ilst` atom: same container shape as the freeform scheme's `ilst`, but each
+ *                child's 4-byte "type" field is instead read as a big-endian integer:
+ *                a 1-based index into `keys`'s entry list, joining the value to its
+ *                key by position rather than by an embedded name. Each child's payload
+ *                is a single `data` atom, byte-identical in shape to the freeform
+ *                scheme's: 4-byte type indicator (1 = UTF-8 text), 4-byte
+ *                locale/country (zero), then the ASCII value bytes.
+ */
+
+const HANDLER_MDTA = "mdta";
+const KEYS_NAMESPACE_MDTA = "mdta";
+
+/** One `hdlr` atom declaring the metadata-keys scheme's handler type (or, for a
+ * dispatch test, some other 4-byte value in that same slot). */
+function buildHdlr(handlerType: string = HANDLER_MDTA): number[] {
+  return atom("hdlr", [
+    ...u32be(0), // version/flags: zero
+    ...u32be(0), // predefined: zero
+    ...asciiBytes(handlerType), // handler type
+    ...new Array(12).fill(0x00), // reserved
+    0x00, // name: empty, null-terminated
+  ]);
+}
+
+/** One `keys` entry: 4-byte entry size (itself + namespace + name), 4-byte namespace
+ * ("mdta"), then the key name filling the rest. */
+function buildKeyEntry(name: string): number[] {
+  const nameBytes = asciiBytes(name);
+  const entrySize = 8 + nameBytes.length; // 4-byte size + 4-byte namespace + name
+  return [...u32be(entrySize), ...asciiBytes(KEYS_NAMESPACE_MDTA), ...nameBytes];
+}
+
+/** The `keys` atom: 4-byte version/flags (zero), 4-byte entry count, then one
+ * `buildKeyEntry` per name, in order (entry N+1 is key index N+1, 1-based). */
+function buildKeys(keyNames: string[]): number[] {
+  return atom("keys", [
+    ...u32be(0), // version/flags: zero
+    ...u32be(keyNames.length), // entry count
+    ...keyNames.flatMap(buildKeyEntry),
+  ]);
+}
+
+/** One `ilst` child for the keys scheme: its 4-byte "type" field is `index` itself
+ * (big-endian), not an ASCII fourCC, joining it to `keys`'s N-th entry by position. */
+function buildKeysIlstEntry(index: number, value: string): number[] {
+  const data = atom("data", [
+    ...u32be(1), // type indicator: 1 = UTF-8 text
+    ...u32be(0), // locale/country: 0
+    ...asciiBytes(value),
+  ]);
+  return [...u32be(8 + data.length), ...u32be(index), ...data]; // "type" is the index
+}
+
+/**
+ * Builds the `moov.udta.meta.{hdlr,keys,ilst}` atom chain for the QuickTime
+ * metadata-keys scheme, one `keys` entry and one `ilst` entry per key/value pair, in
+ * insertion order (so the first item is key index 1, the second index 2, and so on).
+ *
+ * `handlerType` defaults to `"mdta"` (the real value ffmpeg writes); pass another
+ * value, or `includeHdlr: false` to omit the atom entirely, to build fixtures for the
+ * "missing or unrecognized handler falls back to trying both schemes" dispatch rule.
+ * `extraIlstAtoms` appends raw already-encoded atom bytes as further children of
+ * `ilst` (e.g. a freeform `----` atom from a hand-built mix), for tests proving an
+ * explicit handler type gates which scheme is actually read rather than always trying
+ * both.
+ */
+export function buildMp4Keys(
+  items: Record<string, string>,
+  options: { handlerType?: string; includeHdlr?: boolean; extraIlstAtoms?: number[] } = {},
+): Uint8Array {
+  const { handlerType = HANDLER_MDTA, includeHdlr = true, extraIlstAtoms = [] } = options;
+
+  const keyNames = Object.keys(items);
+  const ilstEntries = keyNames.flatMap((name, i) =>
+    buildKeysIlstEntry(i + 1, items[name] as string),
+  );
+
+  const hdlr = includeHdlr ? buildHdlr(handlerType) : [];
+  const keys = buildKeys(keyNames);
+  const ilst = atom("ilst", [...ilstEntries, ...extraIlstAtoms]);
+
+  const meta = atom("meta", [
+    ...u32be(0), // meta's own version/flags field, BEFORE its children
+    ...hdlr,
+    ...keys,
+    ...ilst,
+  ]);
+  const udta = atom("udta", meta);
+  const moov = atom("moov", udta);
+  return new Uint8Array(moov);
+}
