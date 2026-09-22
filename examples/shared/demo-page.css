@@ -1,0 +1,75 @@
+/*
+ * Page-level styling for the demo pages: the centred layout, the page background and the
+ * caption under the card.
+ *
+ * This is deliberately NOT in eko-player.css. That file styles the player and nothing
+ * else, so a host page can drop the player in without having its own body layout taken
+ * over. Anything here is about the page around the player, not the player.
+ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font);
+  background: #d7d5cd;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 30px;
+  transition: 0.3s;
+}
+
+body.embed {
+  background: transparent;
+  padding: 0;
+  min-height: auto;
+  display: block;
+}
+
+body.embed .eko-web {
+  max-width: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+html {
+  overflow-x: clip;
+}
+
+.caption {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+  max-width: 680px;
+  line-height: 1.6;
+}
+
+.caption b {
+  color: var(--ink-2);
+}
+
+.caption code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+@media (max-width: 560px) {
+  /* On desktop the page centres the card with a grid, which makes the card a grid item
+     that will not shrink below its content. Switch to block flow on a phone so it can.
+     The padding here is what eko-player.css's own narrow-width rule subtracts from the
+     viewport, so the two have to agree: change one and the card overflows by the
+     difference. */
+  body {
+    display: block;
+    padding: 14px;
+  }
+}
