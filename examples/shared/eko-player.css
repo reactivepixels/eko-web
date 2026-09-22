@@ -464,6 +464,15 @@ img {
     padding: 16px;
     min-width: 0;
     margin: 0 auto;
+    /* Size against the VIEWPORT, not the parent. `width: 100%` is no use here: a
+       framework that mounts into a wrapper div leaves that wrapper shrink-wrapped around
+       the card's widest flex row, so 100% of it is already too wide. Viewport units
+       ignore whatever the host wrapped this in, which is the only version that holds for
+       every one of the three demos. The subtraction is body's own padding at this
+       breakpoint. */
+    width: calc(100vw - 28px);
+    max-width: 100%;
+    box-sizing: border-box;
   }
   .ew-sig {
     flex-wrap: wrap;
@@ -482,4 +491,34 @@ img {
 /* safety net: never allow horizontal scroll on any device (clip keeps position:sticky working) */
 html {
   overflow-x: clip;
+}
+
+/* The file picker.
+   A native file input is the one control that breaks this material: it renders a
+   system button and a "no file chosen" label that no amount of surrounding soft
+   shadow can absorb. Styling ::file-selector-button and making the input's own text
+   transparent leaves just the button, in the same material as everything else, with
+   no change to anyone's markup. Both demo class names are matched because the React
+   demo named this row differently from the other two. */
+.ew-load input[type="file"],
+.ew-source input[type="file"] {
+  color: transparent;
+  width: 124px;
+  font: 600 11px var(--font);
+}
+.ew-load input[type="file"]::file-selector-button,
+.ew-source input[type="file"]::file-selector-button {
+  font: 600 11px var(--font);
+  color: var(--ink-2);
+  background: var(--bg);
+  box-shadow: var(--out-xs), var(--bevel);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+.ew-load input[type="file"]::file-selector-button:hover,
+.ew-source input[type="file"]::file-selector-button:hover {
+  color: var(--accent);
 }
