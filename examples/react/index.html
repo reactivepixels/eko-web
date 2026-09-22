@@ -112,8 +112,7 @@
     <script type="module">
       import { createElement as h, Fragment, useEffect, useRef, useState } from "react";
       import { createRoot } from "react-dom/client";
-      import { EkoWebEngine } from "../../dist/index.js";
-      import { useEkoPlayer, useEkoTime } from "../../dist/react.js";
+      import { useEkoPlayer, useEkoTime, useEkoWebEngine } from "../../dist/react.js";
       import { readReplayGain } from "../../dist/replaygain.js";
       import { attachSpectrum } from "../shared/spectrum.js";
       import { coverFor } from "../shared/cover.js";
@@ -256,7 +255,12 @@
         engineRef.current = engine;
 
         useEffect(() => {
-          return attachSpectrum(canvasRef.current, () => engineRef.current.analyser);
+          // Idle means nothing has been queued yet. Reading `analyser` then would create the
+          // AudioContext before any click; the engine's first load creates it instead.
+          return attachSpectrum(canvasRef.current, () => {
+            const current = engineRef.current;
+            return current.state === "idle" ? null : current.analyser;
+          });
         }, []);
 
         return h("div", { className: "ew-spec" }, h("canvas", { ref: canvasRef }));
@@ -435,7 +439,10 @@
               h(
                 "span",
                 { className: "sl" },
-                `${Math.round(engine.context.sampleRate / 100) / 10} kHz`,
+                // `engine.context` creates the AudioContext, so wait for the first load.
+                player.state === "idle"
+                  ? "-"
+                  : `${Math.round(engine.context.sampleRate / 100) / 10} kHz`,
               ),
             ),
           ),
@@ -580,16 +587,21 @@
             : "light",
         );
         const [transitionMode, setTransitionMode] = useState("gapless");
-        const [engine, setEngine] = useState(
-          () => new EkoWebEngine({ normalize: true, transition: "gapless", crossfadeSeconds: 3 }),
-        );
+        // `transition` is a construction-time option: the engine reads it once. The hook
+        // handles that. When `transitionMode` changes it builds a new engine with the new
+        // policy, carries over the queue, the position in it, volume and mute, and
+        // destroys the old one. It also destroys the engine on unmount, so there is no
+        // teardown effect to write here.
+        const engine = useEkoWebEngine({
+          normalize: true,
+          transition: transitionMode,
+          crossfadeSeconds: 3,
+        });
         const [trackGainInfo, setTrackGainInfo] = useState([]);
         const [errorMsg, setErrorMsg] = useState("");
 
-        const entriesRef = useRef([]);
         const objectUrlsRef = useRef([]);
         const loadTokenRef = useRef(0);
-        const skipRebuildRef = useRef(true);
 
         // data-theme has to sit on <html>: eko-player.css keys the whole dark palette,
         // including <body>'s own background, off `[data-theme="dark"] body`, which only
@@ -598,46 +610,15 @@
           document.documentElement.setAttribute("data-theme", theme);
         }, [theme]);
 
-        // The engine owns its `analyser` and audio graph, so this is the one place it is
-        // torn down: on unmount, and again just before a rebuilt engine replaces it below
-        // (this effect's own cleanup runs first, on the previous engine, the instant
-        // `engine` changes to a new instance).
-        useEffect(() => {
-          const off = engine.on("error", ({ error }) => {
-            setErrorMsg(`${error.code}: ${error.message}`);
-          });
-          return () => {
-            off();
-            engine.destroy();
-          };
-        }, [engine]);
-
-        // `transition` is a construction-time option on EkoWebEngine, not something a
-        // running engine can be told to change, so switching it builds a fresh one with
-        // the new policy and re-queues whatever was already loaded, at the same queue
-        // position. The old engine is destroyed by the effect above, whose cleanup fires
-        // the moment `engine` state changes. Skipped on the first render: the engine
-        // created above already has the initial mode.
-        useEffect(() => {
-          if (skipRebuildRef.current) {
-            skipRebuildRef.current = false;
-            return;
-          }
-          const resumeIndex = engine.getSnapshot().index;
-          const next = new EkoWebEngine({
-            normalize: true,
-            transition: transitionMode,
-            crossfadeSeconds: 3,
-          });
-          if (entriesRef.current.length > 0) {
-            next.setQueue(
-              entriesRef.current.map((e) => e.track),
-              resumeIndex,
-            );
-          }
-          setEngine(next);
-          // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [transitionMode]);
+        // `engine` is a new instance after a transition switch, so the listener is keyed
+        // on it like any other prop.
+        useEffect(
+          () =>
+            engine.on("error", ({ error }) => {
+              setErrorMsg(`${error.code}: ${error.message}`);
+            }),
+          [engine],
+        );
 
         async function readTrackGain(id, objectUrl, title, artist) {
           const tags = await readReplayGain(objectUrl);
@@ -667,7 +648,6 @@
           if (rawEntries.length === 0) {
             previousUrls.forEach((url) => URL.revokeObjectURL(url));
             objectUrlsRef.current = [];
-            entriesRef.current = [];
             setTrackGainInfo([]);
             engine.setQueue([]);
             return;
@@ -709,7 +689,6 @@
 
           previousUrls.forEach((url) => URL.revokeObjectURL(url));
           objectUrlsRef.current = newUrls;
-          entriesRef.current = entries;
           setTrackGainInfo(entries.map((e) => e.info));
           setErrorMsg("");
           engine.setQueue(entries.map((e) => e.track));
@@ -751,7 +730,11 @@
             engine,
             trackGainInfo,
             transitionMode,
-            onTransitionChange: setTransitionMode,
+            onTransitionChange: (mode) => {
+              // A stale error belongs to the engine the switch is about to replace.
+              setErrorMsg("");
+              setTransitionMode(mode);
+            },
             theme,
             onToggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
             onFileChange,
@@ -763,6 +746,8 @@
             { className: "caption" },
             h("b", null, "EKO Web, React demo"),
             ": the eko-web engine driven through its React binding (",
+            h("code", null, "useEkoWebEngine"),
+            ", ",
             h("code", null, "useEkoPlayer"),
             " and ",
             h("code", null, "useEkoTime"),

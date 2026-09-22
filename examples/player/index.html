@@ -187,6 +187,8 @@
        */
       function rebuild() {
         engine?.destroy();
+        // A stale error belongs to the engine that just went away.
+        $("errors").textContent = "";
         const transitionMode = $("transition-mode").value;
         engine = new EkoWebEngine({
           normalize: true,
@@ -202,13 +204,39 @@
         if (currentFiles.length > 0) loadFiles(currentFiles);
       }
 
+      /**
+       * The shelf insert and the analyser tap, built on the engine's graph. Not called when
+       * the engine is built: reading `engine.context` or `engine.analyser` creates the
+       * AudioContext, and the engine deliberately waits for the first load (which follows a
+       * click here) so the context is tied to a user gesture. The subscribe() callback
+       * below calls this the first time the engine has something queued.
+       */
+      function attachTap() {
+        // The insert point, proven with a real biquad rather than a claim.
+        shelf = engine.context.createBiquadFilter();
+        shelf.type = "highshelf";
+        shelf.frequency.value = 4000;
+        shelf.gain.value = 6;
+        if ($("eq").checked) engine.setInserts([shelf]);
+
+        analyser = engine.analyser;
+        analyser.fftSize = 2048;
+        bins = new Uint8Array(analyser.frequencyBinCount);
+      }
+
       function wire() {
+        // The previous engine's nodes belong to its own, now closed, context.
+        shelf = null;
+        analyser = null;
+        bins = null;
+
         engine.on("error", ({ error }) => {
           $("errors").textContent = `${error.code}: ${error.message}`;
         });
 
         engine.subscribe(() => {
           const snapshot = engine.getSnapshot();
+          if (!analyser && snapshot.state !== "idle") attachTap();
           $("state").textContent = snapshot.state;
           $("source").textContent = snapshot.sourceKind ?? "-";
           $("transition").textContent = snapshot.lastTransition ?? "-";
@@ -223,17 +251,6 @@
             ? `${snapshot.index + 1} / ${snapshot.queueLength}`
             : "-";
         });
-
-        // The insert point, proven with a real biquad rather than a claim.
-        shelf = engine.context.createBiquadFilter();
-        shelf.type = "highshelf";
-        shelf.frequency.value = 4000;
-        shelf.gain.value = 6;
-        if ($("eq").checked) engine.setInserts([shelf]);
-
-        analyser = engine.analyser;
-        analyser.fftSize = 2048;
-        bins = new Uint8Array(analyser.frequencyBinCount);
       }
 
       /**
@@ -388,7 +405,8 @@
       $("source-mode").addEventListener("change", rebuild);
 
       $("eq").addEventListener("change", (event) => {
-        engine.setInserts(event.target.checked ? [shelf] : []);
+        // Before the first load there is no graph yet; attachTap() reads the checkbox then.
+        if (shelf) engine.setInserts(event.target.checked ? [shelf] : []);
       });
 
       const canvas = $("spectrum");

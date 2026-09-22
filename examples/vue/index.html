@@ -113,17 +113,15 @@
         ref,
         shallowRef,
         computed,
-        markRaw,
         onMounted,
         onBeforeUnmount,
         watch,
         toValue,
       } from "vue";
-      import { EkoWebEngine } from "../../dist/index.js";
       // Reading a file's tag is the consumer's job, not the engine's (see the design doc):
       // this demo plays that consumer, exactly like a real app would.
       import { readReplayGain } from "../../dist/replaygain.js";
-      import { useEkoPlayer, useEkoTime } from "../../dist/vue.js";
+      import { useEkoPlayer, useEkoTime, useEkoWebEngine } from "../../dist/vue.js";
       import { attachSpectrum } from "../shared/spectrum.js";
       import { coverFor } from "../shared/cover.js";
 
@@ -270,42 +268,44 @@
               : "light",
           );
 
-          function wireEngine(eng) {
-            eng.on("error", ({ error }) => {
-              errorMessage.value = `${error.code}: ${error.message}`;
-            });
-          }
-
-          function createEngine(transition) {
-            const eng = markRaw(
-              new EkoWebEngine({ normalize: true, transition, crossfadeSeconds: 3 }),
-            );
-            wireEngine(eng);
-            return eng;
-          }
-
-          const transitionMode = ref("gapless");
-          // Not a ref of a ref: a shallowRef holding a plain, non-reactive engine instance
-          // (markRaw keeps Vue from ever wrapping it in a reactive Proxy: an AudioContext
-          // and its nodes are not the kind of object Vue's reactivity should be walking).
-          // Passed to the composables as a getter below, which is exactly what lets the
-          // transition control below tear the engine down and swap in a new one, live,
-          // with both this component and EwProgress picking up the new instance on their
-          // own next reactive read.
-          const engineRef = shallowRef(createEngine(transitionMode.value));
-          const engineGetter = () => engineRef.value;
-
-          const player = useEkoPlayer(engineGetter);
-
           const errorMessage = ref("");
+          const transitionMode = ref("gapless");
 
-          // Everything queue-shaped lives here, in plain closures, not in refs: the UI
-          // only ever needs to read it through player.value (index/queueLength/track),
-          // which useEkoPlayer already makes reactive. Keeping the bookkeeping itself
-          // outside Vue's reactivity means there is nothing here for Vue to track.
+          // The composable owns the engine: it builds it, destroys it when this component
+          // unmounts, and rebuilds it when a construction-time option changes. Passing the
+          // options as a getter is what makes `transitionMode` live: switching it builds a
+          // new engine with the new policy, carries over the queue, the position in it,
+          // volume and mute, and destroys the old one. `engine` is a readonly ref, which
+          // useEkoPlayer and useEkoTime accept as is, so neither this component nor
+          // EwProgress needs to know a swap happened.
+          const engine = useEkoWebEngine(() => ({
+            normalize: true,
+            transition: transitionMode.value,
+            crossfadeSeconds: 3,
+          }));
+          const engineGetter = () => engine.value;
+
+          const player = useEkoPlayer(engine);
+
+          // Keyed on the engine, so a rebuilt one gets its own listener. The old engine's
+          // listener goes with it: destroy() detaches everything.
+          watch(
+            engine,
+            (eng, _previous, onCleanup) => {
+              onCleanup(
+                eng.on("error", ({ error }) => {
+                  errorMessage.value = `${error.code}: ${error.message}`;
+                }),
+              );
+            },
+            { immediate: true },
+          );
+
+          // Bookkeeping the template never reads stays in plain closures. `trackGainInfo`
+          // is the exception: the GAIN readout renders it, so it is a ref, and the readout
+          // updates when it changes rather than only when the player snapshot happens to.
           let objectUrls = [];
-          let queuedEntries = [];
-          let trackGainInfo = [];
+          const trackGainInfo = shallowRef([]);
           let loadToken = 0;
 
           async function readTrackGain(id, objectUrl, title, artist) {
@@ -336,9 +336,8 @@
 
             if (rawEntries.length === 0) {
               previousUrls.forEach((url) => URL.revokeObjectURL(url));
-              trackGainInfo = [];
-              queuedEntries = [];
-              engineRef.value.setQueue([]);
+              trackGainInfo.value = [];
+              engine.value.setQueue([]);
               return;
             }
 
@@ -381,10 +380,9 @@
 
             previousUrls.forEach((url) => URL.revokeObjectURL(url));
             objectUrls = newUrls;
-            queuedEntries = entries.map((e) => e.track);
-            trackGainInfo = entries.map((e) => e.info);
+            trackGainInfo.value = entries.map((e) => e.info);
             errorMessage.value = "";
-            engineRef.value.setQueue(queuedEntries);
+            engine.value.setQueue(entries.map((e) => e.track));
           }
 
           function onFileChange(event) {
@@ -406,28 +404,10 @@
             ]);
           }
 
-          /**
-           * `transition` is a construction-time option on EkoWebEngine, not something a
-           * running engine can be told to change, so switching it tears the engine down
-           * and builds a fresh one with the new policy, re-queuing whatever was already
-           * loaded. This is the one place the demo swaps `engineRef.value` after setup,
-           * which is exactly the case useEkoPlayer/useEkoTime's Ref/getter support exists
-           * for: neither this component nor EwProgress needs to know a swap happened.
-           */
           function setTransition(mode) {
-            if (mode === transitionMode.value) return;
-            // Read the index before anything below runs: old.destroy() resets the old
-            // engine's own queue (and republishes that reset snapshot through the
-            // subscription useEkoPlayer hasn't torn down yet, since that only happens on
-            // its next reactive flush), so reading player.value.index after destroy()
-            // sees -1, not the position we actually want to resume at.
-            const resumeIndex = player.value.index;
+            // A stale error belongs to the engine the switch is about to replace.
+            errorMessage.value = "";
             transitionMode.value = mode;
-            const old = engineRef.value;
-            const next = createEngine(mode);
-            engineRef.value = next;
-            old.destroy();
-            if (queuedEntries.length > 0) next.setQueue(queuedEntries, resumeIndex);
           }
 
           async function togglePlay() {
@@ -487,7 +467,9 @@
               : "No queue",
           );
           const gainLabel = computed(() =>
-            player.value.track ? describeGainInfo(trackGainInfo[player.value.index]) : "No track",
+            player.value.track
+              ? describeGainInfo(trackGainInfo.value[player.value.index])
+              : "No track",
           );
           const volumePct = computed(() => Math.round(player.value.volume * 100));
 
@@ -495,25 +477,32 @@
           // mixing at. Everything is decoded and resampled to this, which is exactly why
           // the note below the player says this is not bit-perfect.
           const rateLabel = computed(
-            () => `${Math.round(engineRef.value.context.sampleRate / 100) / 10} kHz`,
+            // `engine.context` creates the AudioContext, so wait for the first load.
+            () =>
+              player.value.state === "idle"
+                ? "-"
+                : `${Math.round(engine.value.context.sampleRate / 100) / 10} kHz`,
           );
 
           // The spectrum: EKO's own segmented LED display (examples/shared/spectrum.js),
           // shared with the other demos so all three read as the same instrument. It is
           // attached once, in onMounted, for this one canvas, and torn down in
-          // onBeforeUnmount. The getter reads `engineRef.value` fresh on every call rather
-          // than closing over the engine instance, because a transition-mode swap replaces
-          // the whole engine (see setTransition above), and this closure has to keep
-          // reading whichever one is current.
+          // onBeforeUnmount. The getter reads `engine.value` fresh on every call rather
+          // than closing over the engine instance: a transition switch makes
+          // useEkoWebEngine replace the whole engine, and this closure has to keep reading
+          // whichever one is current.
           const canvasEl = ref(null);
           let stopSpectrum = null;
 
           onMounted(() => {
-            stopSpectrum = attachSpectrum(canvasEl.value, () => engineRef.value.analyser);
+            // Idle means nothing has been queued yet. Reading `analyser` then would create
+            // the AudioContext before any click; the engine's first load creates it instead.
+            stopSpectrum = attachSpectrum(canvasEl.value, () =>
+              engine.value.state === "idle" ? null : engine.value.analyser,
+            );
           });
           onBeforeUnmount(() => {
             stopSpectrum?.();
-            engineRef.value.destroy();
             objectUrls.forEach((url) => URL.revokeObjectURL(url));
           });
 
@@ -661,7 +650,7 @@
           </div>
 
           <p class="caption">
-      <b>EKO Web, Vue 3.</b> Driven through <code>useEkoPlayer</code> and <code>useEkoTime</code>. Teardown goes through <code>onScopeDispose</code>, so it works outside a component too. Switch <b>Gapless</b>, <b>Crossfade</b>
+      <b>EKO Web, Vue 3.</b> The engine comes from <code>useEkoWebEngine</code>, which builds it, rebuilds it when the transition changes, and destroys it on unmount. The UI reads it through <code>useEkoPlayer</code> and <code>useEkoTime</code>. Switch <b>Gapless</b>, <b>Crossfade</b>
       and <b>Gap</b> to hear the boundary change.
     </p>
         `,
