@@ -26,7 +26,12 @@ import type { ReplayGainTags } from "./types";
 
 const APE_MAGIC = [0x41, 0x50, 0x45, 0x54, 0x41, 0x47, 0x45, 0x58]; // "APETAGEX"
 const BLOCK_SIZE = 32;
-const HEADER_FLAG = 0x80000000; // bit 31 of the flags field: this block IS the header
+// APEv2's flags field carries two different facts and it is easy to read the wrong one.
+// Bit 31 says the TAG has a header somewhere, which is identical on the header and the
+// footer when one exists. Bit 29 says THIS block is the header rather than the footer,
+// which is what tells the two copies apart. Reading bit 31 here instead makes a footer
+// look like a header, and the item offsets are then computed from the wrong end.
+const IS_HEADER_FLAG = 0x20000000; // bit 29: this block IS the header
 
 function matchesAt(bytes: Uint8Array, offset: number, magic: readonly number[]): boolean {
   if (offset < 0 || offset + magic.length > bytes.length) return false;
@@ -83,7 +88,7 @@ function readTagBlock(bytes: Uint8Array, offset: number, end: number): TagBlock 
   const itemCount = readUint32LE(bytes, offset + 16, end);
   const flags = readUint32LE(bytes, offset + 20, end);
   if (tagSize === undefined || itemCount === undefined || flags === undefined) return undefined;
-  return { tagSize, itemCount, isHeaderBlock: (flags & HEADER_FLAG) !== 0 };
+  return { tagSize, itemCount, isHeaderBlock: (flags & IS_HEADER_FLAG) !== 0 };
 }
 
 /** A null-terminated ASCII key is read a byte at a time: APEv2 keys are always plain

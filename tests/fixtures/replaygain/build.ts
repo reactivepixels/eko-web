@@ -33,8 +33,8 @@ const APE_MAGIC = [0x41, 0x50, 0x45, 0x54, 0x41, 0x47, 0x45, 0x58]; // "APETAGEX
 const APE_VERSION = 2000;
 const BLOCK_SIZE = 32;
 
-const HEADER_FLAG = 0x80000000; // bit 31: this specific block is the header
-const HAS_HEADER_FLAG = 0x20000000; // bit 29: a header exists somewhere in this tag
+const IS_HEADER_FLAG = 0x20000000; // bit 29: THIS block is the header, not the footer
+const HAS_HEADER_FLAG = 0x80000000; // bit 31: the tag has a header somewhere (both copies)
 
 function u32le(n: number): number[] {
   return [n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff];
@@ -91,14 +91,14 @@ export function buildApev2(
   }
 
   const tagSize = itemBytes.length + BLOCK_SIZE; // items + footer, excluding any header
-  const footerFlags = footerOnly ? 0 : HAS_HEADER_FLAG; // bit 31 clear: this copy is the footer
+  const footerFlags = footerOnly ? 0 : HAS_HEADER_FLAG; // bit 29 clear: this copy is the footer
   const footer = buildBlock(tagSize, itemCount, footerFlags);
 
   if (footerOnly) {
     return new Uint8Array([...itemBytes, ...footer]);
   }
 
-  const headerFlags = HEADER_FLAG | HAS_HEADER_FLAG;
+  const headerFlags = IS_HEADER_FLAG | HAS_HEADER_FLAG;
   const header = buildBlock(tagSize, itemCount, headerFlags);
   return new Uint8Array([...header, ...itemBytes, ...footer]);
 }

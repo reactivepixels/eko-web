@@ -38,6 +38,33 @@ function patchU32LE(bytes: Uint8Array, offset: number, value: number): Uint8Arra
 }
 
 describe("APEv2", () => {
+  /**
+   * The flag bits, written as literals rather than through build.ts's named constants.
+   *
+   * Every other test here builds its fixture with the same constants the parser reads,
+   * so if a constant is wrong the fixture and the parser agree and the test still passes
+   * while real files fail. That is not hypothetical: these two bits WERE swapped in both
+   * places, and the "header present" test below passed throughout.
+   *
+   * Per the APEv2 spec, bit 31 says the tag has a header somewhere (set identically on
+   * both copies) and bit 29 says this block is the header rather than the footer. A real
+   * tagger writing a header plus a footer therefore gives the FOOTER flags 0x80000000:
+   * bit 31 set, bit 29 clear.
+   */
+  it("reads a header-plus-footer tag whose flag bits are what the spec actually says", () => {
+    const items = { REPLAYGAIN_TRACK_GAIN: "-6.50 dB", REPLAYGAIN_TRACK_PEAK: "0.988525" };
+    const raw = buildApev2(items);
+
+    // Rewrite both blocks' flags fields with spec literals, independent of any constant.
+    const bytes = new Uint8Array(raw);
+    const view = new DataView(bytes.buffer);
+    const HAS_HEADER = 0x80000000; // bit 31
+    const IS_HEADER = 0x20000000; // bit 29
+    view.setUint32(20, HAS_HEADER | IS_HEADER, true); // header block, at offset 0
+    view.setUint32(bytes.length - 32 + 20, HAS_HEADER, true); // footer block, at the end
+
+    expect(parseApev2(bytes)).toEqual({ gainDb: -6.5, peak: 0.988525 });
+  });
   it("reads gain and peak from a footer-only tag", () => {
     const tag = buildApev2(
       { [GAIN_KEY]: GAIN_VALUE, [PEAK_KEY]: PEAK_VALUE },
