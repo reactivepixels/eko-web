@@ -66,6 +66,25 @@ function renderPlayer(engine: EkoWebEngine) {
  * cannot express. A component that takes its engine as a prop is an ordinary shape, and
  * swapping it is the one case a seed-once-on-mount hook gets wrong.
  */
+/**
+ * The `useEkoPlayer` counterpart of {@link renderSwappableTime}. Vue has had a test for
+ * this since it was written; React did not, and that gap hid two real memo-dependency
+ * mutations from the whole suite.
+ */
+function renderSwappablePlayer(first: EkoWebEngine) {
+  const ref: { player: EkoPlayer | null } = { player: null };
+  function Probe({ engine }: { engine: EkoWebEngine }) {
+    ref.player = useEkoPlayer(engine);
+    return null;
+  }
+  const { rerender, unmount } = render(createElement(Probe, { engine: first }));
+  return {
+    ref: ref as { player: EkoPlayer },
+    swapTo: (next: EkoWebEngine) => rerender(createElement(Probe, { engine: next })),
+    unmount,
+  };
+}
+
 function renderSwappableTime(first: EkoWebEngine) {
   const ref: { time: EkoTime | null } = { time: null };
   function Probe({ engine }: { engine: EkoWebEngine }) {
@@ -149,6 +168,41 @@ afterEach(() => {
 });
 
 describe("useEkoPlayer", () => {
+  /**
+   * Two DISTINCT engines, which no other React test used. That matters more here than it
+   * looks: a freshly constructed engine's snapshot is `EMPTY_SNAPSHOT`, a shared frozen
+   * singleton, so two never-played engines report the SAME snapshot object. Anything that
+   * keys off the snapshot alone therefore cannot see the swap at all, and would keep
+   * serving the first engine's bound transport methods forever.
+   */
+  it("moves its subscription and its transport to a different engine when given one", async () => {
+    const a = makeEngine();
+    const b = makeEngine();
+
+    const { ref, swapTo, unmount } = renderSwappablePlayer(a);
+    expect(subscriberCount(a)).toBe(1);
+    expect(subscriberCount(b)).toBe(0);
+
+    await act(async () => {
+      swapTo(b);
+    });
+
+    expect(subscriberCount(a)).toBe(0);
+    expect(subscriberCount(b)).toBe(1);
+
+    // The transport must follow too. Both engines are idle and share EMPTY_SNAPSHOT, so a
+    // stale `bound` would be invisible to any assertion on state alone. Assert the real
+    // effect rather than spying: the methods were bound before any spy could wrap them,
+    // so a spy installed here would never be the function the hook actually holds.
+    await act(async () => {
+      ref.player.setVolume(0.25);
+    });
+    expect(b.volume).toBeCloseTo(0.25, 6);
+    expect(a.volume).toBe(1);
+
+    unmount();
+    expect(subscriberCount(b)).toBe(0);
+  });
   it("returns the engine's current snapshot fields", () => {
     const engine = makeEngine();
     const { ref } = renderPlayer(engine);

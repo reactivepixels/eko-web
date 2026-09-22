@@ -469,6 +469,8 @@ describe("useEkoTime", () => {
     const engineRef = shallowRef(a.engine);
     const { result: time, scope } = runInScope(() => useEkoTime(engineRef));
     expect(time.currentTime.value).toBeCloseTo(0.3, 6);
+    expect(timeupdateListenerCount(a.engine)).toBe(1);
+    expect(timeupdateListenerCount(b.engine)).toBe(0);
 
     // Engine B has no queue and has never played, so it will never emit a timeupdate on
     // its own. A composable that seeds only on first setup keeps showing engine A's 0.3
@@ -478,7 +480,14 @@ describe("useEkoTime", () => {
 
     expect(time.currentTime.value).toBe(0);
     expect(time.duration.value).toBe(0);
+    // The subscription has to MOVE, not merely be added. Checking the values alone would
+    // pass just as happily while engine A kept a listener for the life of the app, which
+    // is a leak per swap and the kind nothing ever notices.
+    expect(timeupdateListenerCount(a.engine)).toBe(0);
+    expect(timeupdateListenerCount(b.engine)).toBe(1);
+
     scope.stop();
+    expect(timeupdateListenerCount(b.engine)).toBe(0);
   });
 
   it("stopping the scope tears down the engine's timeupdate subscription, so no pending frame can reach it any more", async () => {
