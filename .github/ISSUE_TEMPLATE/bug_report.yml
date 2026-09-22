@@ -1,0 +1,71 @@
+name: Bug report
+description: Something isn't working right in EKO Web
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping. Detail helps a lot, especially for anything you can hear.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Queue two FLACs
+        2. Set transition to "crossfade"
+        3. Skip while the overlap is running
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part?
+      options:
+        - Playback or track boundaries (gapless, crossfade, gap)
+        - Loudness or ReplayGain
+        - Queue, shuffle or repeat
+        - React binding
+        - Vue binding
+        - Media Session
+        - Types or build
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: audible
+    attributes:
+      label: If you can hear it, what does it sound like?
+      description: >
+        A click, a gap, a level jump, a track starting early or late. This is the most useful
+        thing you can tell us, because the test suite cannot hear anything.
+      placeholder: "A short click right at the boundary, only when skipping mid-crossfade"
+  - type: input
+    id: format
+    attributes:
+      label: Audio format
+      placeholder: "e.g. FLAC 44.1 kHz, or 192 kbps MP3 with a ReplayGain tag"
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: "e.g. Safari 18 on macOS 15, or Chrome 130 on Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "@rpxl/eko-web 0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Anything in the console?
+      render: text

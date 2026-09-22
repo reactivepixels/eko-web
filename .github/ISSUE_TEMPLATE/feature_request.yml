@@ -1,0 +1,26 @@
+name: Idea
+description: Suggest something for EKO Web
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Worth knowing before you write: the library deliberately does not parse metadata
+        beyond ReplayGain tags, ships no UI, and cannot be bit-perfect. Those are scope
+        decisions rather than gaps. Everything else is open.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem, rather than the solution. It often has more than one answer.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What did you have in mind?
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What are you doing instead today?
+      description: Even an ugly workaround tells us how much this is costing you.

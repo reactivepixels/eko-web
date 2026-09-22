@@ -280,6 +280,16 @@ The example player is the fastest way to hear the parts a test can't prove. Load
 files, then try crossfade against gapless against gap on the same boundary, and shuffle
 with the queue position readout visible.
 
+## Contributing
+
+[CONTRIBUTING.md](./CONTRIBUTING.md) covers the setup, the scope decisions, and the standard
+tests are held to here. The short version: the core stays framework-independent, the library
+never claims fidelity it cannot deliver, and a test that has never failed has not been
+verified.
+
+Anything you can hear is the most valuable kind of bug report. The suite asserts scheduling
+maths and cannot hear a click.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).

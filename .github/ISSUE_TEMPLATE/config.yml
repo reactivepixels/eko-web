@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://reactivepixels.com/eko-web/docs
+    about: Complete examples for plain JavaScript, React and Vue, plus the full API.
+  - name: Live demo
+    url: https://reactivepixels.com/eko-web/
+    about: The library running, so you can hear a boundary before filing anything.
+  - name: EKO for Mac
+    url: https://github.com/reactivepixels/eko
+    about: The native player. Separate product. Bit-perfect, which this cannot be.
