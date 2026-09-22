@@ -90,6 +90,64 @@ engine.subscribe(() => {
 binding is a few lines. The snapshot deliberately leaves out `currentTime`: it changes
 every frame and would re-render your whole tree at 60fps. Read that from the engine.
 
+### React (`@rpxl/eko-web/react`)
+
+```tsx
+import { useEkoPlayer, useEkoTime } from "@rpxl/eko-web/react";
+
+function Transport({ engine }) {
+  const { paused, track, index, queueLength, play, pause, next } = useEkoPlayer(engine);
+  return (
+    <button onClick={paused ? play : pause}>
+      {paused ? "Play" : "Pause"} {index + 1} / {queueLength}
+    </button>
+  );
+}
+
+function Progress({ engine }) {
+  const { currentTime, duration } = useEkoTime(engine); // only this re-renders per frame
+  return <progress value={currentTime} max={duration} />;
+}
+```
+
+`useEkoPlayer` is `useSyncExternalStore` over the engine's snapshot, so it is
+concurrent-safe and gives the right value during server rendering. `useEkoTime` is
+separate on purpose: `currentTime` changes every frame, and keeping it out of the
+snapshot means scrubbing re-renders your progress bar instead of your track list.
+
+### Vue 3 (`@rpxl/eko-web/vue`)
+
+```vue
+<script setup>
+import { useEkoPlayer, useEkoTime } from "@rpxl/eko-web/vue";
+
+const player = useEkoPlayer(engine); // a readonly ref over the snapshot
+const { currentTime, duration } = useEkoTime(engine);
+</script>
+
+<template>
+  <button @click="player.paused ? player.play() : player.pause()">
+    {{ player.paused ? "Play" : "Pause" }} {{ player.index + 1 }} / {{ player.queueLength }}
+  </button>
+  <progress :value="currentTime" :max="duration" />
+</template>
+```
+
+Teardown goes through `onScopeDispose`, so it works inside a bare `effectScope` and not
+only inside a component. The composables also accept a ref or a getter for the engine, so
+swapping engines is reactive; the React hooks take the engine directly, since a new prop
+re-renders anyway. Same concepts and same names on both sides, each in its own idiom, and
+a test compares the two so they cannot drift apart.
+
+Vue is in the first release rather than deferred for a reason: a second binding is the
+only real proof the core is framework-free. One binding can hide accidental coupling.
+Two cannot.
+
+### Installing
+
+Both frameworks are optional peer dependencies, so you install whichever you use and
+neither ends up in the other's bundle. The library itself has no runtime dependencies.
+
 ### Loudness tags (`@rpxl/eko-web/replaygain`)
 
 ```ts
@@ -169,13 +227,14 @@ see the docs.)
 **v0.1, feature-complete engine, not yet published to npm.** Done: the engine (buffer
 playback with true gapless queueing, crossfade, a streaming fallback for long files,
 loudness normalization from a tag or measured, click-free play/pause/seek), the queue
-(shuffle, repeat, history), the `replaygain` and `media-session` subpaths, coded errors
+(shuffle, repeat, history), the `replaygain` and `media-session` subpaths, React and Vue
+bindings, coded errors
 you can branch on, the `EkoAudioElement` facade (`@rpxl/eko-web/element`), and the
 ear-test player in `examples/player/`. See
 [`examples/README.md`](./examples/README.md); it needs a build first, it is not a no-build
-page. 359 unit tests, dual ESM/CJS build with types.
+page. 416 unit tests, dual ESM/CJS build with types.
 
-Not yet: React and Vue bindings, and a WebCodecs source strategy.
+Not yet: a WebCodecs source strategy.
 
 The example player is the fastest way to hear the parts a test can't prove. Load a few
 files, then try crossfade against gapless against gap on the same boundary, and shuffle
