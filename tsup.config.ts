@@ -8,6 +8,8 @@ export default defineConfig({
     element: "src/adapters/eko-audio-element.ts",
     replaygain: "src/replaygain/index.ts",
     "media-session": "src/media-session/index.ts",
+    react: "src/react/index.ts",
+    vue: "src/vue/index.ts",
   },
   format: ["esm", "cjs"],
   dts: true,
@@ -16,8 +18,8 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   minify: false,
-  // No framework deps in the core. React is only external once the React adapter lands.
-  external: ["react", "react-dom"],
+  // No framework deps in the core. React/Vue are only external once their bindings land.
+  external: ["react", "react-dom", "vue"],
   outExtension({ format }) {
     return { js: format === "cjs" ? ".cjs" : ".js" };
   },

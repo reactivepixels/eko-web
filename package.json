@@ -44,6 +44,16 @@
       "types": "./dist/media-session.d.ts",
       "import": "./dist/media-session.js",
       "require": "./dist/media-session.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./vue": {
+      "types": "./dist/vue.d.ts",
+      "import": "./dist/vue.js",
+      "require": "./dist/vue.cjs"
     }
   },
   "files": [
@@ -51,6 +61,18 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "vue": ">=3.4"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
   },
   "scripts": {
     "build": "tsup",
