@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ElementSourceStrategy, METADATA_TIMEOUT_MS } from "../src/engine/sources/element-source";
+import type { LoadOptions } from "../src/engine/sources/source";
 import { MockAudioContext, MockMediaElement, MockGainNode } from "./mock-audio";
 
 function setup() {
@@ -16,7 +17,7 @@ function loadWithMetadata(
   element: MockMediaElement,
   track: { src: string; gainDb?: number },
   duration = 120,
-  options = { normalize: true, targetLufs: -16 },
+  options: LoadOptions = { normalize: "auto", targetLufs: -16 },
 ) {
   const promise = strategy.load(track, ctx as unknown as AudioContext, options);
   setTimeout(() => element.fireLoadedMetadata(duration), 0);
@@ -24,7 +25,7 @@ function loadWithMetadata(
 }
 
 describe("ElementSourceStrategy", () => {
-  // Most tracks here load with normalize:true and no gainDb, which now warns on every
+  // Most tracks here load with normalize:"auto" and no gainDb, which now warns on every
   // fresh strategy (that is the point of the per-instance fix). Spy on console.warn for
   // the whole suite so that behaviour is covered without leaving stderr noisy; individual
   // tests that care about the warning assert against this same spy.

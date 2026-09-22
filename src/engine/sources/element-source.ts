@@ -53,17 +53,40 @@ export class ElementSourceStrategy implements AudioSourceStrategy {
     return new ElementLoadedSource(track, ctx, element, node, this.elementNormGain(track, options));
   }
 
+  /**
+   * `"tags"` uses `gainDb` when present and stays quiet at unity without one, since that
+   * mode never asked for measurement. `"auto"` and `"measure"` both want a number this
+   * path cannot produce without a decoded buffer: `"auto"` because its tag fell through,
+   * `"measure"` because it ignores `gainDb` outright, so both warn and fall back to unity.
+   */
   private elementNormGain(track: EkoTrack, options: LoadOptions): number {
-    if (!options.normalize) return 1;
-    if (typeof track.gainDb === "number") return dbToLinear(track.gainDb);
-    if (!this.warned) {
-      this.warned = true;
-      console.warn(
-        "eko-web: streaming playback cannot measure loudness. Supply a track gainDb (for " +
-          "example from a ReplayGain tag) to normalize long files.",
-      );
-    }
+    if (options.normalize === false) return 1;
+    const hasTag = typeof track.gainDb === "number";
+    if (hasTag && options.normalize !== "measure") return dbToLinear(track.gainDb!);
+    if (options.normalize === "tags") return 1;
+    this.warnUnmeasurable(options);
     return 1;
+  }
+
+  /**
+   * `options.onUnmeasurableLoudness`, when supplied, lets a caller that loads many tracks
+   * in sequence (the engine, across a queue) dedupe this warning once for the whole run
+   * rather than once per strategy instance: `selectStrategy()` builds a fresh
+   * `ElementSourceStrategy` for every track, so `this.warned` alone never sees past the
+   * track it was built for. Without a callback (a strategy used directly, as the tests
+   * here do), this falls back to its own per-instance guard.
+   */
+  private warnUnmeasurable(options: LoadOptions): void {
+    if (options.onUnmeasurableLoudness) {
+      options.onUnmeasurableLoudness();
+      return;
+    }
+    if (this.warned) return;
+    this.warned = true;
+    console.warn(
+      "eko-web: streaming playback cannot measure loudness. Supply a track gainDb (for " +
+        "example from a ReplayGain tag) to normalize long files.",
+    );
   }
 }
 

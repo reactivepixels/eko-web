@@ -37,9 +37,23 @@ export interface EkoTrack {
 /** High-level engine state. */
 export type EkoState = "idle" | "loading" | "ready" | "playing" | "paused" | "ended" | "error";
 
+/**
+ * Where normalization gets its number.
+ *
+ * `"tags"` uses `EkoTrack.gainDb` when present and never measures; without a tag it runs
+ * at unity. `"measure"` always measures the decoded buffer, ignoring `gainDb` even when
+ * present. `"auto"` prefers `gainDb` and falls back to measuring; on the element strategy,
+ * which has no decoded buffer to measure, that fallback is unity gain plus a one-time
+ * warning instead. `false` disables normalization outright.
+ */
+export type NormalizeMode = "auto" | "tags" | "measure" | false;
+
 export interface EkoWebEngineOptions {
-  /** Loudness-normalize tracks (ReplayGain-style). Default: `true`. */
-  normalize?: boolean;
+  /**
+   * Loudness-normalize tracks (ReplayGain-style). Default: `"auto"`. `true` and `false` are
+   * still accepted: `true` maps to `"auto"`, `false` stays off.
+   */
+  normalize?: NormalizeMode | true;
   /** Target integrated loudness (LUFS) for normalization. Default: `-16`. */
   targetLufs?: number;
   /** Boundary policy between queued tracks. Default: `"gapless"`. */

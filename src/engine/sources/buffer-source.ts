@@ -43,19 +43,26 @@ async function fetchBytes(src: string): Promise<ArrayBuffer> {
 }
 
 /**
- * Prefer a precomputed tag gain; otherwise measure the decoded buffer. Both are clamped
- * against sample peak so normalization can never introduce clipping.
+ * Resolve the normalization gain per `options.normalize`. Both the tag and the measured
+ * paths are clamped against sample peak so normalization can never introduce clipping.
+ *
+ * - `false`: unity, always.
+ * - `"tags"`: `gainDb` when present; unity otherwise (never measures).
+ * - `"measure"`: always measures, ignoring `gainDb` even when present.
+ * - `"auto"`: prefers `gainDb`, measures when it is absent.
  */
 function computeNormGain(track: EkoTrack, buffer: AudioBuffer, options: LoadOptions): number {
-  if (!options.normalize) return 1;
+  if (options.normalize === false) return 1;
   const channels: Float32Array[] = [];
   for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
   const peak = samplePeak(channels);
 
-  if (typeof track.gainDb === "number") {
-    const gain = dbToLinear(track.gainDb);
+  const hasTag = typeof track.gainDb === "number";
+  if (hasTag && options.normalize !== "measure") {
+    const gain = dbToLinear(track.gainDb!);
     return peak > 0 ? Math.min(gain, 1 / peak) : gain;
   }
+  if (options.normalize === "tags") return 1;
   return computeNormalizationGain(
     measureLoudnessLufs(channels, buffer.sampleRate),
     options.targetLufs,

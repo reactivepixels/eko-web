@@ -1,11 +1,22 @@
-import type { EkoTrack } from "../../types";
+import type { EkoTrack, NormalizeMode } from "../../types";
 
 /** How a track's audio reaches the graph. */
 export type SourceKind = "buffer" | "element";
 
 export interface LoadOptions {
-  normalize: boolean;
+  /** Already resolved: the engine maps `true` to `"auto"` before this reaches a strategy. */
+  normalize: NormalizeMode;
   targetLufs: number;
+  /**
+   * Called in place of a strategy's own `console.warn` when normalization was requested
+   * but there is no way to honour it (the element path has no decoded buffer to measure,
+   * and the track carries no `gainDb`). Supplying this lets a caller that loads many
+   * tracks in sequence, such as the engine across a whole queue, dedupe the warning once
+   * for all of them rather than once per `LoadedSource`/strategy instance. Optional: a
+   * strategy that owns its own per-instance warning (see `ElementSourceStrategy`) falls
+   * back to that when this is omitted.
+   */
+  onUnmeasurableLoudness?: () => void;
 }
 
 /**

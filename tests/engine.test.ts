@@ -498,7 +498,7 @@ describe("EkoWebEngine config", () => {
   it("reports every resolved option, defaults included, not just a partial set", () => {
     const { engine } = makeEngine(undefined, { transition: "gap" });
     expect(engine.config).toEqual({
-      normalize: true,
+      normalize: "auto",
       targetLufs: -16,
       transition: "gap",
       crossfadeSeconds: 3,

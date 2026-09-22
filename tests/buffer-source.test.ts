@@ -1,9 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { BufferSourceStrategy } from "../src/engine/sources/buffer-source";
 import { EkoError } from "../src/engine/errors";
+import type { LoadOptions } from "../src/engine/sources/source";
 import { MockAudioContext, MockGainNode, makeToneBuffer, stubFetch } from "./mock-audio";
 
-const OPTS = { normalize: false, targetLufs: -16 };
+const OPTS: LoadOptions = { normalize: false, targetLufs: -16 };
 
 let restore: (() => void) | null = null;
 afterEach(() => {
@@ -166,7 +167,7 @@ describe("BufferSourceStrategy", () => {
     const loaded = await new BufferSourceStrategy().load(
       { src: "/a.flac", gainDb: -6 },
       ctx as unknown as AudioContext,
-      { normalize: true, targetLufs: -16 },
+      { normalize: "auto", targetLufs: -16 },
     );
     // -6 dB is roughly 0.501 linear, and the 0.1 peak leaves plenty of clamp headroom.
     expect(loaded.normGain).toBeCloseTo(0.5012, 3);

@@ -14,6 +14,7 @@ import type {
   EkoEventName,
   EkoEventListener,
   TransitionKind,
+  NormalizeMode,
 } from "../types";
 
 /**
@@ -40,8 +41,22 @@ function seconds(value: number | undefined, fallback: number): number {
   return Math.max(0, value);
 }
 
+/**
+ * `normalize`, coerced the same way `seconds()` coerces a duration option: `undefined`
+ * takes the default, `true` maps onto `"auto"` (spec 7.4), and every other accepted value
+ * (`"auto"`, `"tags"`, `"measure"`, `false`) passes through unchanged.
+ */
+function normalizeMode(
+  value: EkoWebEngineOptions["normalize"],
+  fallback: NormalizeMode,
+): NormalizeMode {
+  if (value === undefined) return fallback;
+  if (value === true) return "auto";
+  return value;
+}
+
 const DEFAULTS = {
-  normalize: true,
+  normalize: "auto" as NormalizeMode,
   targetLufs: -16,
   transition: "gapless" as TransitionKind,
   crossfadeSeconds: 3,
@@ -61,7 +76,7 @@ const DEFAULTS = {
  */
 export class EkoWebEngine {
   private emitter = new Emitter();
-  private readonly normalize: boolean;
+  private readonly normalize: NormalizeMode;
   private readonly targetLufs: number;
   private readonly transition: TransitionKind;
   private readonly crossfadeSeconds: number;
@@ -128,9 +143,15 @@ export class EkoWebEngine {
   // forgotten so destroy() can settle them instead of leaving handles pointed at a context
   // that is closing.
   private deferredDisposals = new Map<ReturnType<typeof setTimeout>, LoadedSource>();
+  // Guards the "auto"/"measure" element-path fallback warning (no buffer to measure, no
+  // gainDb to fall back on) so a long queue of streamed tracks warns once, not once per
+  // track. Lives here, not on the strategy: `selectStrategy()` builds a fresh
+  // ElementSourceStrategy for every track loaded, so a per-instance flag never survives
+  // past the track it was built for.
+  private loudnessFallbackWarned = false;
 
   constructor(options: EkoWebEngineOptions = {}) {
-    this.normalize = options.normalize ?? DEFAULTS.normalize;
+    this.normalize = normalizeMode(options.normalize, DEFAULTS.normalize);
     this.targetLufs = options.targetLufs ?? DEFAULTS.targetLufs;
     this.transition = options.transition ?? DEFAULTS.transition;
     this.crossfadeSeconds = seconds(options.crossfadeSeconds, DEFAULTS.crossfadeSeconds);
@@ -210,7 +231,7 @@ export class EkoWebEngine {
   /** The engine's fully resolved options, defaults included, so a consumer never has to
    * guess what actually applied. */
   get config(): {
-    normalize: boolean;
+    normalize: NormalizeMode;
     targetLufs: number;
     transition: TransitionKind;
     crossfadeSeconds: number;
@@ -424,7 +445,23 @@ export class EkoWebEngine {
     return strategy.load(track, ctx, {
       normalize: this.normalize,
       targetLufs: this.targetLufs,
+      onUnmeasurableLoudness: () => this.warnLoudnessFallback(),
     });
+  }
+
+  /**
+   * "auto" or "measure" on the element path, with no `gainDb` to fall back on: there is no
+   * decoded buffer to measure, so normalization silently runs at unity. Warned once per
+   * engine, however many tracks the queue loads through this path, not once per track; see
+   * `loudnessFallbackWarned`.
+   */
+  private warnLoudnessFallback(): void {
+    if (this.loudnessFallbackWarned) return;
+    this.loudnessFallbackWarned = true;
+    console.warn(
+      "eko-web: streaming playback cannot measure loudness. Supply a track gainDb (for " +
+        "example from a ReplayGain tag) to normalize long files.",
+    );
   }
 
   // ── Transport ───────────────────────────────────────────────────────────────
