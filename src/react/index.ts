@@ -119,11 +119,17 @@ function readTime(engine: EkoWebEngine): EkoTime {
 export function useEkoTime(engine: EkoWebEngine): EkoTime {
   const [time, setTime] = useState<EkoTime>(() => readTime(engine));
 
-  useEffect(
-    () =>
-      engine.on("timeupdate", ({ currentTime, duration }) => setTime({ currentTime, duration })),
-    [engine],
-  );
+  useEffect(() => {
+    // Reseed on every engine, not just the first. The lazy initializer above runs once for
+    // the life of the component, so a consumer swapping the engine it passes in (an
+    // ordinary thing for a component that takes it as a prop) would otherwise keep showing
+    // the old engine's last position until the new one emits, which never happens if the
+    // new engine is paused.
+    setTime(readTime(engine));
+    return engine.on("timeupdate", ({ currentTime, duration }) =>
+      setTime({ currentTime, duration }),
+    );
+  }, [engine]);
 
   return time;
 }

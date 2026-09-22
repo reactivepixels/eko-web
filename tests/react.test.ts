@@ -61,6 +61,25 @@ function renderPlayer(engine: EkoWebEngine) {
 }
 
 /** Same shape as {@link renderPlayer}, for `useEkoTime`. */
+/**
+ * Renders `useEkoTime` against a swappable engine, which the single-engine helper above
+ * cannot express. A component that takes its engine as a prop is an ordinary shape, and
+ * swapping it is the one case a seed-once-on-mount hook gets wrong.
+ */
+function renderSwappableTime(first: EkoWebEngine) {
+  const ref: { time: EkoTime | null } = { time: null };
+  function Probe({ engine }: { engine: EkoWebEngine }) {
+    ref.time = useEkoTime(engine);
+    return null;
+  }
+  const { rerender, unmount } = render(createElement(Probe, { engine: first }));
+  return {
+    ref: ref as { time: EkoTime },
+    swapTo: (next: EkoWebEngine) => rerender(createElement(Probe, { engine: next })),
+    unmount,
+  };
+}
+
 function renderTime(engine: EkoWebEngine) {
   const ref: { time: EkoTime | null; renders: number } = { time: null, renders: 0 };
   function Probe() {
@@ -337,6 +356,32 @@ describe("useEkoPlayer", () => {
 });
 
 describe("useEkoTime", () => {
+  it("reseeds from the new engine when the engine it is given changes", async () => {
+    restoreFetch = stubFetch();
+    const a = makeEngineWithCtx();
+    const b = makeEngineWithCtx();
+
+    const ready = whenReady(a.engine);
+    await act(async () => {
+      a.engine.setQueue([{ id: "a", src: "/a.flac" }]);
+      await ready;
+    });
+    await act(async () => {
+      a.engine.seek(0.3); // engine A sits at a non-zero position inside its 0.5s buffer
+    });
+
+    const { ref, swapTo, unmount } = renderSwappableTime(a.engine);
+    expect(ref.time.currentTime).toBeCloseTo(0.3, 6);
+
+    // Engine B has no queue and has never played, so it will never emit a timeupdate on
+    // its own. A hook that seeds only on first mount keeps showing engine A's 0.3 forever.
+    await act(async () => {
+      swapTo(b.engine);
+    });
+    expect(ref.time.currentTime).toBe(0);
+    expect(ref.time.duration).toBe(0);
+    unmount();
+  });
   it("returns the engine's currentTime and duration", () => {
     const engine = makeEngine();
     const { ref } = renderTime(engine);
