@@ -238,6 +238,24 @@ describe("ID3v2", () => {
     expect(parseId3v2(tag)).toEqual({ gainDb: -6.5 });
   });
 
+  it("skips a v2.3 extended header, whose size field excludes its own 4 bytes", () => {
+    // The v2.3 extended header is the mirror-image trap of the frame size one: its size
+    // field is a plain 32-bit big-endian value that does NOT count the 4 size bytes, while
+    // v2.4's is syncsafe and DOES count them. Reading v2.3 with v2.4's rule lands the
+    // cursor 4 bytes short, inside the padding, and the frame is never found.
+    // 6 bytes of extended header body: 2 flag bytes and a 4-byte padding size.
+    const extendedHeaderBytes = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    const body = txxxBody(0x00, "REPLAYGAIN_TRACK_GAIN", "-6.50 dB");
+    const tag = buildId3v2Tag({
+      major: 3,
+      frameBody: body,
+      extendedHeaderFlag: true,
+      // size field: plain 32-bit big-endian 6, counting only the body that follows.
+      extendedHeaderBytes: [0x00, 0x00, 0x00, 0x06, ...extendedHeaderBytes],
+    });
+    expect(parseId3v2(tag)).toEqual({ gainDb: -6.5 });
+  });
+
   it("decodes an ISO-8859-1 (encoding 0x00) TXXX frame", () => {
     const body = txxxBody(0x00, "REPLAYGAIN_TRACK_GAIN", "-6.50 dB");
     const tag = buildId3v2Tag({ major: 4, frameBody: body });
@@ -262,7 +280,7 @@ describe("ID3v2", () => {
     expect(parseId3v2(tag)).toEqual({});
   });
 
-  it("returns whatever was already found rather than throwing when a frame's declared size runs past the physical buffer", () => {
+  it("returns whatever was already found rather than throwing when a frame's declared size runs past the end of the tag", () => {
     const gainBody = txxxBody(0x03, "REPLAYGAIN_TRACK_GAIN", "-6.50 dB");
     const gainFrame = [
       ...asciiBytes("TXXX"),

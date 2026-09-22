@@ -5,6 +5,11 @@ import type { ReplayGainTags } from "./types";
  * MP3 uses. Pure byte parsing: no engine dependency, no work performed at import time
  * (this module has no side effects).
  *
+ * v2.2 is deliberately not handled. Its frames use 3-byte ids and carry no per-frame
+ * flags, so the frame walk below would misread one, and it finds no tags rather than
+ * returning something wrong. Files that old effectively never carry ReplayGain, so this
+ * is a scope decision and not an oversight.
+ *
  * The header's own 4-byte size field is syncsafe (7 bits per byte) in BOTH v2.3 and
  * v2.4. FRAME sizes are not: v2.4 frame sizes are syncsafe, but v2.3 frame sizes are a
  * plain 32-bit big-endian integer. For a small frame the two readings often agree
