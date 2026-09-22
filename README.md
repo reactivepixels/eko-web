@@ -232,7 +232,7 @@ bindings, coded errors
 you can branch on, the `EkoAudioElement` facade (`@rpxl/eko-web/element`), and the
 ear-test player in `examples/player/`. See
 [`examples/README.md`](./examples/README.md); it needs a build first, it is not a no-build
-page. 416 unit tests, dual ESM/CJS build with types.
+page. 417 unit tests, dual ESM/CJS build with types.
 
 Not yet: a WebCodecs source strategy.
 

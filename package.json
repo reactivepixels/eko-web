@@ -6,6 +6,9 @@
   "license": "MIT",
   "author": "Rod Leviton",
   "homepage": "https://github.com/reactivepixels/eko-web",
+  "bugs": {
+    "url": "https://github.com/reactivepixels/eko-web/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/reactivepixels/eko-web.git"
