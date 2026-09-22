@@ -49,9 +49,7 @@
         font: 600 11.5px var(--font);
         color: var(--ink-2);
         background: var(--bg);
-        box-shadow:
-          var(--out-xs),
-          var(--bevel);
+        box-shadow: var(--out-xs), var(--bevel);
         border: none;
         border-radius: 999px;
         padding: 8px 14px;
@@ -75,9 +73,7 @@
         height: 38px;
         border-radius: 50%;
         background: var(--bg);
-        box-shadow:
-          var(--out-xs),
-          var(--bevel);
+        box-shadow: var(--out-xs), var(--bevel);
         border: none;
         color: var(--ink-2);
         display: grid;
@@ -268,9 +264,7 @@
             { className: "t r", id: "ewRem" },
             known ? "-" + formatTime(duration - currentTime) : "0:00",
           ),
-          !hasTrack || known
-            ? null
-            : h("span", { className: "ew-live", id: "ewLive" }, "LIVE"),
+          !hasTrack || known ? null : h("span", { className: "ew-live", id: "ewLive" }, "LIVE"),
         );
       }
 
@@ -612,7 +606,9 @@
             : "light",
         );
         const [transitionMode, setTransitionMode] = useState("gapless");
-        const [engine, setEngine] = useState(() => new EkoWebEngine({ transition: "gapless", normalize: true }));
+        const [engine, setEngine] = useState(
+          () => new EkoWebEngine({ transition: "gapless", normalize: true }),
+        );
         const [trackMeta, setTrackMeta] = useState({});
         const [gainInfo, setGainInfo] = useState({});
         const [status, setStatus] = useState("No track loaded. Choose files or use the test tone.");
@@ -760,9 +756,18 @@
               "label",
               { className: "btn" },
               "Choose files",
-              h("input", { type: "file", accept: "audio/*", multiple: true, onChange: onFileChange }),
+              h("input", {
+                type: "file",
+                accept: "audio/*",
+                multiple: true,
+                onChange: onFileChange,
+              }),
             ),
-            h("button", { type: "button", className: "btn", onClick: onToneClick }, "Use a test tone"),
+            h(
+              "button",
+              { type: "button", className: "btn", onClick: onToneClick },
+              "Use a test tone",
+            ),
             h("span", { className: "status" }, status),
           ),
           errorMsg ? h("div", { className: "ew-err" }, errorMsg) : null,
