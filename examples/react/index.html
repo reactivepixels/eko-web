@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>EKO Web: React demo</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23ef6a1e'/%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="../shared/eko-player.css" />
 
     <!--
@@ -25,52 +29,15 @@
 
     <style>
       /*
-        Additions scoped to this page only. examples/shared/eko-player.css is
-        shared with the Vue demo and is not touched. MARKUP-REFERENCE.html is a
-        fixed-track marketing widget: it has no file picker, no test tone button
-        and no previous/next transport, because it always plays one generated
-        ambient bed. This demo needs all three, so the rules below add them using
-        the same design tokens the shared stylesheet already defines
-        (--bg, --out-xs, --in, --bevel, --ink-2, --ink-3, --font), rather than
-        inventing a second visual language.
+        Everything below is for pieces this demo needs that eko-player.css (shared with the
+        other demos) has no opinion on: the previous/next transport buttons, the file/tone
+        loading row, and a couple of small states. eko-player.css itself is not edited, so
+        this stays local to this one page. Copied verbatim from the vanilla demo's own local
+        style block, so the three demos share pixel-identical chrome around the library.
       */
-      .ew-source {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        background: var(--bg);
-        box-shadow: var(--in);
-        border-radius: 13px;
-        padding: 10px 14px;
-        margin-bottom: 16px;
-      }
-      .ew-source .btn {
-        font: 600 11.5px var(--font);
-        color: var(--ink-2);
-        background: var(--bg);
-        box-shadow: var(--out-xs), var(--bevel);
-        border: none;
-        border-radius: 999px;
-        padding: 8px 14px;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-      .ew-source .btn:active {
-        box-shadow: var(--in);
-      }
-      .ew-source input[type="file"] {
-        display: none;
-      }
-      .ew-source .status {
-        font-size: 11.5px;
-        color: var(--ink-3);
-        flex: 1;
-        min-width: 140px;
-      }
       .ew-skip {
-        width: 38px;
-        height: 38px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
         background: var(--bg);
         box-shadow: var(--out-xs), var(--bevel);
@@ -90,58 +57,59 @@
         opacity: 0.4;
         cursor: default;
       }
-      .ew-track.disabled {
-        cursor: default;
+      .ew-load {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        background: var(--bg);
+        box-shadow: var(--in);
+        border-radius: 13px;
+        padding: 12px 18px;
+        margin-bottom: 16px;
       }
-      .ew-err {
-        font-size: 11.5px;
-        color: #b0392b;
-        margin-top: 8px;
+      .ew-load button {
+        font: 600 11px var(--font);
+        color: var(--ink-2);
+        background: var(--bg);
+        box-shadow: var(--out-xs), var(--bevel);
+        border: none;
+        border-radius: 999px;
+        padding: 8px 14px;
+        cursor: pointer;
+        flex: 0 0 auto;
       }
-      /*
-        The shared breakpoint (examples/shared/eko-player.css, max-width: 560px)
-        was tuned for the reference markup, which has no previous/next transport
-        and a short, fixed download link. This page adds both a wider transport
-        row and a ReplayGain readout whose text length varies, so it needs a
-        little more room at the same breakpoint to avoid horizontal overflow.
-
-        `#root` also needs an explicit width here. The shared CSS was authored
-        assuming `.eko-web` is a direct child of `body`: at a wide viewport,
-        `body{display:grid;place-items:center}` centers that one child by
-        shrink-wrapping it, which still works with React's own `#root` mount
-        div standing in for it. But once the same breakpoint switches `body`
-        to `display:block`, a shrink-wrapped `#root` keeps sizing itself to
-        its widest un-wrapped flex row instead of the viewport, which is what
-        caused the overflow. Scoping `width: 100%` to this breakpoint fixes
-        the narrow case without disturbing the wide-viewport centering.
-      */
-      @media (max-width: 560px) {
-        #root {
-          width: 100%;
-          max-width: 100%;
-        }
-        .ew-skip {
-          width: 30px;
-          height: 30px;
-        }
-        .ew-ctrls {
-          gap: 8px;
-        }
-        .ew-foot {
-          flex-wrap: wrap;
-        }
-        .ew-foot .ew-dl {
-          flex: 1 1 100%;
-          justify-content: center;
-        }
+      .ew-load .ew-err {
+        color: var(--accent);
+        font: 600 11px var(--font);
+        flex: 1 1 100%;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
 
+    <script>
+      // Classic script, runs even if the module below never starts. If nothing on the page
+      // has booted after a moment, say so instead of leaving a blank card: a silent dead page
+      // is the worst possible demo to hand someone.
+      window.__ekoBooted = false;
+      setTimeout(function () {
+        if (window.__ekoBooted) return;
+        var root = document.getElementById("root");
+        if (!root) return;
+        root.textContent =
+          "The page script never started, so nothing here works. Almost always this page " +
+          "was opened over file:// (ES module imports need a real origin) or the server " +
+          "isn't rooted at the repo (dist/ has to resolve one level up from " +
+          "examples/react/). Run npm run build, then npm run harness, then open " +
+          "http://localhost:4321/examples/react/. Check the console for the exact error.";
+        root.style.cssText = "max-width:680px;margin:40px auto;font-family:sans-serif;color:#b00";
+      }, 1500);
+    </script>
+
     <script type="module">
-      import { createElement as h, Fragment, useEffect, useMemo, useRef, useState } from "react";
+      import { createElement as h, Fragment, useEffect, useRef, useState } from "react";
       import { createRoot } from "react-dom/client";
       import { EkoWebEngine } from "../../dist/index.js";
       import { useEkoPlayer, useEkoTime } from "../../dist/react.js";
@@ -149,24 +117,26 @@
 
       const TRANSITIONS = ["gapless", "crossfade", "gap"];
 
+      /** mm:ss, clamped to zero for anything not-yet-known (NaN, negative). */
       function formatTime(seconds) {
-        if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+        if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
         const total = Math.floor(seconds);
         const m = Math.floor(total / 60);
         const s = total % 60;
-        return `${m}:${String(s).padStart(2, "0")}`;
+        return `${m}:${s.toString().padStart(2, "0")}`;
       }
 
-      function titleFromFilename(name) {
-        const dot = name.lastIndexOf(".");
-        return dot > 0 ? name.slice(0, dot) : name;
+      /** What the "GAIN" readout says for one queue slot's loudness info. */
+      function describeGainInfo(info) {
+        if (!info) return "-";
+        return info.source === "tag" ? `tag, ${info.gainDb.toFixed(2)} dB` : "measured, no tag";
       }
 
       /**
-       * A 440 Hz sine of exactly 880 cycles, encoded as a 16-bit WAV blob, same
-       * approach as examples/player/index.html. The whole-cycle length keeps the
-       * waveform continuous across the loop point, so a click at the seam can only
-       * come from the transition, never from the tone itself.
+       * A 440 Hz sine of exactly 880 cycles, as a 16-bit WAV blob. The whole-cycle length is
+       * the point: the waveform is continuous across the loop point, so a click at the seam
+       * can only come from the transition policy, never from the audio itself. Copied from
+       * examples/player/index.html, which already solved this.
        */
       function makeTestTone() {
         const rate = 48000;
@@ -197,192 +167,171 @@
         return new Blob([bytes], { type: "audio/wav" });
       }
 
+      function titleFromFileName(name) {
+        return (name || "Untitled").replace(/\.[^./]+$/, "");
+      }
+
+      function sourceLabel(kind) {
+        if (kind === "buffer") return "Buffer decode";
+        if (kind === "element") return "Streaming element";
+        return "No track";
+      }
+
       /**
-       * Reads a track's own progress on its own hook. `useEkoTime` fires on every
-       * `timeupdate` (roughly once per frame while playing), so this component is
-       * the only thing in the tree that re-renders at that rate: everything else
-       * reads `useEkoPlayer`, whose snapshot deliberately leaves `currentTime` out
-       * for exactly this reason. Seeking calls `engine.seek()` directly, since a
-       * seek is an action on the engine, not a piece of state this component reads.
+       * The clock, and only the clock, subscribes to `useEkoTime`. `currentTime` changes
+       * every animation frame while playing; if this lived in `PlayerCard` below, every
+       * frame would re-render the whole card (title, spectrum markup, signal path, queue,
+       * all of it) for a number only this strip actually shows. Splitting it into its own
+       * component means only this component's own render function re-runs each frame,
+       * which is exactly the discrete/continuous split the vanilla demo draws by hand
+       * between its renderState() and renderTime() functions.
        *
-       * `duration` comes in as a prop from the parent's `useEkoPlayer` snapshot
-       * instead of from `useEkoTime`. The engine only emits `timeupdate` from the
-       * playback loop, from a seek, or at a natural end, so right after a fresh
-       * track loads (or a rebuilt engine is handed a new queue) `useEkoTime`'s own
-       * duration can read stale until one of those fires. The snapshot's duration
-       * updates on `durationchange`, which fires the moment metadata is known, so
-       * it is the reliable source; `useEkoTime` here is only for `currentTime`.
+       * `duration` comes in as a prop from the parent's `useEkoPlayer` snapshot rather
+       * than from `useEkoTime`, because the engine only emits `timeupdate` from the
+       * playback loop, a seek, or a natural end: right after a fresh track loads,
+       * `useEkoTime`'s own duration can read stale until one of those fires. The
+       * snapshot's duration updates on `durationchange`, which fires the moment metadata
+       * is known, so it is the reliable source; `useEkoTime` here is only for `currentTime`.
        */
-      function ProgressBar({ engine, hasTrack, duration }) {
+      function ProgressBar({ engine, duration }) {
         const { currentTime } = useEkoTime(engine);
         const trackRef = useRef(null);
-        const known = hasTrack && Number.isFinite(duration) && duration > 0;
-        const ratio = known ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
 
-        function timeFromEvent(event) {
+        function seekAt(clientX) {
           const el = trackRef.current;
-          if (!el) return 0;
+          if (!el || duration <= 0) return;
           const rect = el.getBoundingClientRect();
-          const x = Math.min(rect.right, Math.max(rect.left, event.clientX));
-          return ((x - rect.left) / rect.width) * duration;
+          const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+          engine.seek(ratio * duration);
         }
 
         function onPointerDown(event) {
-          if (!known) return;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          engine.seek(timeFromEvent(event));
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          seekAt(event.clientX);
         }
 
         function onPointerMove(event) {
-          if (!known || event.buttons !== 1) return;
-          engine.seek(timeFromEvent(event));
+          if (event.buttons !== 1) return;
+          seekAt(event.clientX);
         }
+
+        const pct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+        const remaining = Math.max(0, duration - currentTime);
 
         return h(
           "div",
-          { className: "ew-scrub", id: "ewScrubWrap" },
-          h("span", { className: "t", id: "ewCur" }, known ? formatTime(currentTime) : "0:00"),
+          { className: "ew-scrub" },
+          h("span", { className: "t" }, formatTime(currentTime)),
           h(
             "div",
             {
-              className: "ew-track" + (known ? "" : " disabled"),
-              id: "ewProg",
+              className: "ew-track",
               ref: trackRef,
-              role: "slider",
-              "aria-label": "Seek",
-              "aria-valuemin": 0,
-              "aria-valuemax": known ? duration : 0,
-              "aria-valuenow": known ? currentTime : 0,
               onPointerDown,
               onPointerMove,
             },
-            h("div", { className: "fill", style: { width: ratio * 100 + "%" } }),
-            h("div", { className: "knob", style: { left: ratio * 100 + "%" } }),
+            h("div", { className: "fill", style: { width: `${pct}%` } }),
+            h("div", { className: "knob", style: { left: `${pct}%` } }),
           ),
-          h(
-            "span",
-            { className: "t r", id: "ewRem" },
-            known ? "-" + formatTime(duration - currentTime) : "0:00",
-          ),
-          !hasTrack || known ? null : h("span", { className: "ew-live", id: "ewLive" }, "LIVE"),
+          h("span", { className: "t r" }, formatTime(remaining)),
         );
       }
 
       /**
-       * The spectrum reads `engine.analyser` directly on a `requestAnimationFrame`
-       * loop. That is a live audio-graph tap, not application state, so it does not
-       * go through `useEkoPlayer` or a snapshot; drawing it that way would either
-       * re-render the whole player 60 times a second or lag a frame behind.
+       * The spectrum reads `engine.analyser` directly on a `requestAnimationFrame` loop.
+       * That is a live audio-graph tap, not application state, so it does not go through
+       * `useEkoPlayer` or a snapshot; drawing it that way would either re-render the whole
+       * player 60 times a second or lag a frame behind. Same rAF loop as the vanilla
+       * demo's own frame() function, just scoped to this component's canvas ref.
        */
-      function Spectrum({ engine, theme }) {
+      function Spectrum({ engine, specColor }) {
         const canvasRef = useRef(null);
 
         useEffect(() => {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext("2d");
-          const analyser = engine.analyser;
-          analyser.fftSize = 2048;
-          const bins = new Uint8Array(analyser.frequencyBinCount);
-          const spec =
-            getComputedStyle(document.documentElement).getPropertyValue("--spec").trim() ||
-            "239,106,30";
+          let bins = null;
           let raf = 0;
 
           function frame() {
-            const width = canvas.clientWidth;
-            const height = canvas.clientHeight;
-            if (canvas.width !== width) canvas.width = width;
-            if (canvas.height !== height) canvas.height = height;
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const analyser = engine.analyser;
+            if (analyser.fftSize !== 2048) analyser.fftSize = 2048;
+            if (!bins || bins.length !== analyser.frequencyBinCount) {
+              bins = new Uint8Array(analyser.frequencyBinCount);
+            }
             analyser.getByteFrequencyData(bins);
-            ctx.fillStyle = `rgba(${spec}, 0.9)`;
-            const barWidth = canvas.width / bins.length;
+            const width = canvas.width / bins.length;
             for (let i = 0; i < bins.length; i++) {
-              const barHeight = (bins[i] / 255) * canvas.height;
-              ctx.fillRect(i * barWidth, canvas.height - barHeight, barWidth, barHeight);
+              const height = (bins[i] / 255) * canvas.height;
+              const alpha = 0.35 + (bins[i] / 255) * 0.65;
+              ctx.fillStyle = `rgba(${specColor}, ${alpha})`;
+              ctx.fillRect(i * width, canvas.height - height, Math.ceil(width), height);
             }
             raf = requestAnimationFrame(frame);
           }
 
           raf = requestAnimationFrame(frame);
           return () => cancelAnimationFrame(raf);
-        }, [engine, theme]);
+        }, [engine, specColor]);
 
-        return h("div", { className: "ew-spec" }, h("canvas", { ref: canvasRef, id: "ewSpec" }));
+        return h("div", { className: "ew-spec" }, h("canvas", { ref: canvasRef }));
       }
 
       /**
-       * Everything but the clock. One `useEkoPlayer(engine)` call drives the whole
-       * card: transport, queue position, volume, signal path and the ReplayGain
-       * readout. Its snapshot only changes on discrete events (play, pause, a
-       * track boundary, a volume change), so this component re-renders far less
-       * often than `ProgressBar` above.
+       * Everything but the clock. One `useEkoPlayer(engine)` call drives the whole card:
+       * transport, queue position, volume, signal path and the GAIN readout. Its snapshot
+       * only changes on discrete events (play, pause, a track boundary, a volume change),
+       * so this component re-renders far less often than `ProgressBar` above.
        */
       function PlayerCard({
         engine,
-        meta,
-        gainInfo,
+        trackGainInfo,
         transitionMode,
         onTransitionChange,
+        specColor,
         theme,
         onToggleTheme,
+        onFileChange,
+        onToneClick,
+        errorMsg,
       }) {
         const player = useEkoPlayer(engine);
         const volTrackRef = useRef(null);
         const track = player.track;
-        const trackMeta = (track && meta[track.id]) || {
-          title: "Nothing loaded",
-          artist: "Choose a file or use the test tone",
-        };
-        const info = track ? gainInfo[track.id] : null;
 
-        const sourceLabel =
-          player.sourceKind === "buffer"
-            ? "Buffer, decoded"
-            : player.sourceKind === "element"
-              ? "Element, streaming"
-              : "No source";
+        const queueText = track ? `${player.index + 1} / ${player.queueLength}` : "No queue";
+        const gainText = track ? describeGainInfo(trackGainInfo[player.index]) : "No track";
 
-        const queueText =
-          player.queueLength > 0 ? `track ${player.index + 1} of ${player.queueLength}` : "";
-        const subtitle = queueText ? `${trackMeta.artist}, ${queueText}` : trackMeta.artist;
-
-        const gainText = !track
-          ? "No track loaded"
-          : !info
-            ? "Reading tag..."
-            : info.source === "tag"
-              ? `ReplayGain tag: ${info.gainDb.toFixed(2)} dB`
-              : "ReplayGain: measured, no tag found";
-
-        function onVolumeFromEvent(event) {
+        function volumeAt(clientX) {
           const el = volTrackRef.current;
           if (!el) return 0;
           const rect = el.getBoundingClientRect();
-          const x = Math.min(rect.right, Math.max(rect.left, event.clientX));
-          return (x - rect.left) / rect.width;
+          return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
         }
 
         function onVolumePointerDown(event) {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          player.setVolume(onVolumeFromEvent(event));
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          player.setVolume(volumeAt(event.clientX));
         }
 
         function onVolumePointerMove(event) {
           if (event.buttons !== 1) return;
-          player.setVolume(onVolumeFromEvent(event));
+          player.setVolume(volumeAt(event.clientX));
         }
 
-        const hasQueue = player.queueLength > 0;
         const volumePct = Math.round(player.volume * 100);
 
         return h(
           "div",
-          { className: "eko-web" + (player.state === "playing" ? " playing" : ""), id: "player" },
+          { className: "eko-web" + (player.state === "playing" ? " playing" : "") },
           h(
             "div",
             { className: "ew-head" },
-            h("div", { className: "ew-cover", id: "ewCover" }),
+            h("div", { className: "ew-cover" }),
             h(
               "div",
               { className: "ew-meta" },
@@ -399,17 +348,23 @@
                   h("i", null),
                 ),
               ),
-              h("div", { className: "ew-title", id: "ewTitle" }, trackMeta.title),
-              h("div", { className: "ew-sub", id: "ewSub" }, subtitle),
+              h(
+                "div",
+                { className: "ew-title" },
+                track ? track.title || "Untitled" : "Nothing loaded",
+              ),
+              h(
+                "div",
+                { className: "ew-sub" },
+                track ? track.artist || "" : "Choose a file, or use the test tone",
+              ),
             ),
-            h("span", { className: "ew-badge" }, "EKO", " ", "WEB"),
+            h("span", { className: "ew-badge" }, "EKO WEB"),
             h(
               "button",
               {
-                type: "button",
                 className: "ew-theme",
-                id: "ewThemeBtn",
-                "aria-label": "Toggle theme",
+                "aria-label": theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
                 onClick: onToggleTheme,
               },
               h(
@@ -426,7 +381,21 @@
             ),
           ),
 
-          h(Spectrum, { engine, theme }),
+          h(
+            "div",
+            { className: "ew-load" },
+            h("input", {
+              type: "file",
+              accept: "audio/*",
+              multiple: true,
+              "aria-label": "Choose audio files",
+              onChange: onFileChange,
+            }),
+            h("button", { type: "button", onClick: onToneClick }, "Use a test tone"),
+            errorMsg ? h("span", { className: "ew-err" }, errorMsg) : null,
+          ),
+
+          h(Spectrum, { engine, specColor }),
 
           h(
             "div",
@@ -435,27 +404,26 @@
               "div",
               { className: "node" },
               h("span", { className: "k" }, "SOURCE"),
-              h("span", { className: "v", id: "ewSrc" }, sourceLabel),
+              h("span", { className: "v" }, sourceLabel(player.sourceKind)),
             ),
             h("span", { className: "link" }),
             h(
               "div",
               { className: "node" },
               h("span", { className: "k" }, "ENGINE"),
-              h("span", { className: "v", id: "ewEng" }, "Web Audio, 32-bit float"),
+              h("span", { className: "v" }, "Web Audio, 32-bit float"),
             ),
             h("span", { className: "link" }),
             h(
               "div",
               { className: "node o" },
               h("span", { className: "k" }, "OUTPUT"),
-              h("span", { className: "v", id: "ewOut" }, "System mixer"),
+              h("span", { className: "v" }, "System mixer"),
             ),
             h(
               "div",
               {
                 className: "seal",
-                id: "ewSeal",
                 title:
                   "Lossless decode plus real DSP, but the browser resamples to the system rate. Install EKO for true bit-perfect, native-rate output.",
               },
@@ -479,33 +447,52 @@
             ),
           ),
 
+          // eko-player.css only styles a signal-path strip with SOURCE/ENGINE/OUTPUT, the
+          // shape above; it says nothing about queue position or ReplayGain. Rather than
+          // invent new classes for those, this reuses the same strip's node/k/v/link
+          // building blocks a second time, so it inherits the same spacing, wrapping and
+          // dark-mode behaviour with zero new CSS. Same choice the vanilla demo makes.
+          h(
+            "div",
+            { className: "ew-sig" },
+            h(
+              "div",
+              { className: "node" },
+              h("span", { className: "k" }, "QUEUE"),
+              h("span", { className: "v" }, queueText),
+            ),
+            h("span", { className: "link" }),
+            h(
+              "div",
+              { className: "node o" },
+              h("span", { className: "k" }, "GAIN"),
+              h("span", { className: "v" }, gainText),
+            ),
+          ),
+
           h(
             "div",
             { className: "ew-ctrls" },
             h(
               "button",
               {
-                type: "button",
                 className: "ew-skip",
+                disabled: !track,
                 "aria-label": "Previous track",
-                disabled: !hasQueue,
                 onClick: () => player.previous(),
               },
               h(
                 "svg",
                 { viewBox: "0 0 24 24", fill: "currentColor" },
-                h("rect", { x: "5", y: "5", width: "2.4", height: "14" }),
-                h("path", { d: "M17 5v14l-9-7z" }),
+                h("path", { d: "M6 6h2v12H6zM20 6 9 12l11 6z" }),
               ),
             ),
             h(
               "button",
               {
-                type: "button",
                 className: "ew-play",
-                id: "ewPlay",
+                disabled: !track,
                 "aria-label": player.paused ? "Play" : "Pause",
-                disabled: !hasQueue,
                 onClick: () => (player.paused ? player.play() : player.pause()),
               },
               player.paused
@@ -517,27 +504,25 @@
                 : h(
                     "svg",
                     { viewBox: "0 0 24 24", fill: "currentColor" },
-                    h("rect", { x: "6", y: "5", width: "4", height: "14" }),
-                    h("rect", { x: "14", y: "5", width: "4", height: "14" }),
+                    h("path", { d: "M7 5h4v14H7zM13 5h4v14h-4z" }),
                   ),
             ),
             h(
               "button",
               {
-                type: "button",
                 className: "ew-skip",
+                disabled: !track,
                 "aria-label": "Next track",
-                disabled: !hasQueue,
                 onClick: () => player.next(),
               },
               h(
                 "svg",
                 { viewBox: "0 0 24 24", fill: "currentColor" },
-                h("path", { d: "M7 5v14l9-7z" }),
-                h("rect", { x: "16.6", y: "5", width: "2.4", height: "14" }),
+                h("path", { d: "M16 6h2v12h-2zM4 6l11 6-11 6z" }),
               ),
             ),
-            h(ProgressBar, { engine, hasTrack: track != null, duration: player.duration }),
+            h(ProgressBar, { engine, duration: player.duration }),
+            h("span", { className: "ew-live hidden" }, "LIVE"),
           ),
 
           h(
@@ -551,23 +536,17 @@
                 "div",
                 {
                   className: "ew-track",
-                  id: "ewVol",
                   ref: volTrackRef,
-                  role: "slider",
-                  "aria-label": "Volume",
-                  "aria-valuemin": 0,
-                  "aria-valuemax": 100,
-                  "aria-valuenow": volumePct,
                   onPointerDown: onVolumePointerDown,
                   onPointerMove: onVolumePointerMove,
                 },
-                h("div", { className: "fill", style: { width: volumePct + "%" } }),
-                h("div", { className: "knob", style: { left: volumePct + "%" } }),
+                h("div", { className: "fill", style: { width: `${volumePct}%` } }),
+                h("div", { className: "knob", style: { left: `${volumePct}%` } }),
               ),
             ),
             h(
               "div",
-              { className: "ew-presets", id: "ewTransition" },
+              { className: "ew-presets" },
               TRANSITIONS.map((mode) =>
                 h(
                   "b",
@@ -588,13 +567,27 @@
             h(
               "div",
               { className: "ew-note" },
-              "The progress bar above is its own component, subscribed only to ",
-              h("code", null, "useEkoTime"),
-              ". Everything else here reads ",
-              h("code", null, "useEkoPlayer"),
-              ", which only changes on play, pause and track boundaries, so scrubbing never re-renders the rest of the player.",
+              "Lossless decode, a real gapless and crossfade scheduler, and a live spectrum, in the browser. But the browser ",
+              h("b", null, "resamples to your system rate"),
+              ", so it cannot go bit-perfect.",
             ),
-            h("span", { className: "ew-dl", id: "ewGain" }, gainText),
+            h(
+              "a",
+              { className: "ew-dl", href: "https://reactivepixels.com/eko" },
+              h(
+                "svg",
+                {
+                  viewBox: "0 0 24 24",
+                  fill: "none",
+                  stroke: "currentColor",
+                  strokeWidth: "2",
+                  strokeLinecap: "round",
+                  strokeLinejoin: "round",
+                },
+                h("path", { d: "M12 3v13M7 11l5 5 5-5M5 21h14" }),
+              ),
+              "Get EKO for bit-perfect",
+            ),
           ),
         );
       }
@@ -605,13 +598,12 @@
             ? "dark"
             : "light",
         );
+        const [specColor, setSpecColor] = useState("128,128,128");
         const [transitionMode, setTransitionMode] = useState("gapless");
         const [engine, setEngine] = useState(
-          () => new EkoWebEngine({ transition: "gapless", normalize: true }),
+          () => new EkoWebEngine({ normalize: true, transition: "gapless", crossfadeSeconds: 3 }),
         );
-        const [trackMeta, setTrackMeta] = useState({});
-        const [gainInfo, setGainInfo] = useState({});
-        const [status, setStatus] = useState("No track loaded. Choose files or use the test tone.");
+        const [trackGainInfo, setTrackGainInfo] = useState([]);
         const [errorMsg, setErrorMsg] = useState("");
 
         const entriesRef = useRef([]);
@@ -619,14 +611,21 @@
         const loadTokenRef = useRef(0);
         const skipRebuildRef = useRef(true);
 
+        // data-theme has to sit on <html>: eko-player.css keys the whole dark palette,
+        // including <body>'s own background, off `[data-theme="dark"] body`, which only
+        // matches when an ANCESTOR of <body> carries the attribute.
         useEffect(() => {
           document.documentElement.setAttribute("data-theme", theme);
+          const value = getComputedStyle(document.documentElement)
+            .getPropertyValue("--spec")
+            .trim();
+          if (value) setSpecColor(value);
         }, [theme]);
 
-        // The engine owns its `analyser` and audio graph, so this is the one place
-        // it is torn down: on unmount, and again just before a rebuilt engine
-        // replaces it below. `destroy()` is idempotent, but this effect only ever
-        // calls it once per engine instance.
+        // The engine owns its `analyser` and audio graph, so this is the one place it is
+        // torn down: on unmount, and again just before a rebuilt engine replaces it below
+        // (this effect's own cleanup runs first, on the previous engine, the instant
+        // `engine` changes to a new instance).
         useEffect(() => {
           const off = engine.on("error", ({ error }) => {
             setErrorMsg(`${error.code}: ${error.message}`);
@@ -637,99 +636,122 @@
           };
         }, [engine]);
 
-        // `transition` is a construction-time option on EkoWebEngine, not a live
-        // setter (unlike shuffle or repeat), so changing it rebuilds the engine
-        // and re-queues whatever was already loaded. Skipped on the first render:
-        // the engine created above already has the initial mode.
+        // `transition` is a construction-time option on EkoWebEngine, not something a
+        // running engine can be told to change, so switching it builds a fresh one with
+        // the new policy and re-queues whatever was already loaded, at the same queue
+        // position. The old engine is destroyed by the effect above, whose cleanup fires
+        // the moment `engine` state changes. Skipped on the first render: the engine
+        // created above already has the initial mode.
         useEffect(() => {
           if (skipRebuildRef.current) {
             skipRebuildRef.current = false;
             return;
           }
-          const next = new EkoWebEngine({ transition: transitionMode, normalize: true });
+          const resumeIndex = engine.getSnapshot().index;
+          const next = new EkoWebEngine({
+            normalize: true,
+            transition: transitionMode,
+            crossfadeSeconds: 3,
+          });
           if (entriesRef.current.length > 0) {
-            next.setQueue(entriesRef.current.map((entry) => entry.track));
+            next.setQueue(
+              entriesRef.current.map((e) => e.track),
+              resumeIndex,
+            );
           }
           setEngine(next);
           // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [transitionMode]);
 
-        async function loadFiles(files, { isTestTone = false } = {}) {
+        async function readTrackGain(id, objectUrl, title, artist) {
+          const tags = await readReplayGain(objectUrl);
+          if (typeof tags.gainDb === "number") {
+            return {
+              track: { id, src: objectUrl, gainDb: tags.gainDb, title, artist },
+              info: { source: "tag", gainDb: tags.gainDb },
+            };
+          }
+          return { track: { id, src: objectUrl, title, artist }, info: { source: "measured" } };
+        }
+
+        /**
+         * Load one or more picked files (or the generated test tone) into the queue.
+         * `rawEntries` is `{ blob, name, artist }`, not a raw FileList: the tone has a name
+         * and artist of its own, so both sources funnel through the same path rather than
+         * one of them being a special case further down.
+         *
+         * Mirrors the vanilla demo's loadFiles: object URLs are created once per file and
+         * revoked when superseded, and a token guards against two picks racing (a second
+         * pick while the first's tag reads are still in flight).
+         */
+        async function loadFiles(rawEntries) {
           const token = ++loadTokenRef.current;
           const previousUrls = objectUrlsRef.current;
 
-          if (files.length === 0) return;
-
-          let trackId = 0;
-          const built = [];
-          const newUrls = [];
-
-          async function buildOne(file) {
-            const objectUrl = URL.createObjectURL(file);
-            newUrls.push(objectUrl);
-            const tags = await readReplayGain(objectUrl);
-            const id = `track-${trackId++}`;
-            const meta = isTestTone
-              ? { title: "Test tone", artist: "440 Hz sine, loops every 2 seconds" }
-              : { title: titleFromFilename(file.name), artist: "Local file" };
-            if (typeof tags.gainDb === "number") {
-              return {
-                track: { id, src: objectUrl, gainDb: tags.gainDb },
-                meta,
-                gainInfo: { source: "tag", gainDb: tags.gainDb },
-              };
-            }
-            return { track: { id, src: objectUrl }, meta, gainInfo: { source: "measured" } };
+          if (rawEntries.length === 0) {
+            previousUrls.forEach((url) => URL.revokeObjectURL(url));
+            objectUrlsRef.current = [];
+            entriesRef.current = [];
+            setTrackGainInfo([]);
+            engine.setQueue([]);
+            return;
           }
 
-          if (files.length === 1) {
-            // Single file: queue it twice, same as examples/player/, so there is a
-            // real track boundary to hear the transition mode at.
-            const first = await buildOne(files[0]);
-            built.push(first);
-            built.push({
-              track: { ...first.track, id: `track-${trackId++}` },
-              meta: first.meta,
-              gainInfo: first.gainInfo,
-            });
+          let trackId = 0;
+          const entries = [];
+          const newUrls = [];
+
+          if (rawEntries.length === 1) {
+            // A single file: queue it twice, so there is a real track boundary to hear the
+            // transition mode land on.
+            const objectUrl = URL.createObjectURL(rawEntries[0].blob);
+            newUrls.push(objectUrl);
+            const first = await readTrackGain(
+              `track-${trackId++}`,
+              objectUrl,
+              rawEntries[0].name,
+              rawEntries[0].artist,
+            );
+            entries.push(first);
+            entries.push({ track: { ...first.track, id: `track-${trackId++}` }, info: first.info });
           } else {
-            for (const file of files) built.push(await buildOne(file));
+            for (const raw of rawEntries) {
+              const objectUrl = URL.createObjectURL(raw.blob);
+              newUrls.push(objectUrl);
+              entries.push(
+                await readTrackGain(`track-${trackId++}`, objectUrl, raw.name, raw.artist),
+              );
+            }
           }
 
           if (token !== loadTokenRef.current) {
-            // Superseded by a newer loadFiles() call while our tag reads were
-            // in flight: drop our own results, keep only the URLs we made.
+            // Superseded by a later pick while our tag reads were in flight: drop our own
+            // results, clean up only the URLs we ourselves created.
             newUrls.forEach((url) => URL.revokeObjectURL(url));
             return;
           }
 
           previousUrls.forEach((url) => URL.revokeObjectURL(url));
           objectUrlsRef.current = newUrls;
-          entriesRef.current = built;
-
-          const metaMap = {};
-          const gainMap = {};
-          built.forEach((entry) => {
-            metaMap[entry.track.id] = entry.meta;
-            gainMap[entry.track.id] = entry.gainInfo;
-          });
-          setTrackMeta(metaMap);
-          setGainInfo(gainMap);
-          setStatus(`Loaded ${built.length} track${built.length === 1 ? "" : "s"}.`);
+          entriesRef.current = entries;
+          setTrackGainInfo(entries.map((e) => e.info));
           setErrorMsg("");
-          engine.setQueue(built.map((entry) => entry.track));
+          engine.setQueue(entries.map((e) => e.track));
         }
 
         function onFileChange(event) {
           const files = Array.from(event.target.files || []);
           event.target.value = "";
           if (files.length === 0) return;
-          loadFiles(files);
+          loadFiles(
+            files.map((f) => ({ blob: f, name: titleFromFileName(f.name), artist: "Local file" })),
+          );
         }
 
         function onToneClick() {
-          const file = new File([makeTestTone()], "test-tone.wav", { type: "audio/wav" });
-          loadFiles([file], { isTestTone: true });
+          loadFiles([
+            { blob: makeTestTone(), name: "Test tone", artist: "440 Hz sine, generated" },
+          ]);
         }
 
         return h(
@@ -747,51 +769,45 @@
                 overflow: "hidden",
               },
             },
-            "EKO Web: a lossless-friendly player, built with the React binding",
+            "EKO Web: an embeddable lossless player in the browser",
           ),
-          h(
-            "div",
-            { className: "ew-source" },
-            h(
-              "label",
-              { className: "btn" },
-              "Choose files",
-              h("input", {
-                type: "file",
-                accept: "audio/*",
-                multiple: true,
-                onChange: onFileChange,
-              }),
-            ),
-            h(
-              "button",
-              { type: "button", className: "btn", onClick: onToneClick },
-              "Use a test tone",
-            ),
-            h("span", { className: "status" }, status),
-          ),
-          errorMsg ? h("div", { className: "ew-err" }, errorMsg) : null,
           h(PlayerCard, {
             engine,
-            meta: trackMeta,
-            gainInfo,
+            trackGainInfo,
             transitionMode,
             onTransitionChange: setTransitionMode,
+            specColor,
             theme,
             onToggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
+            onFileChange,
+            onToneClick,
+            errorMsg,
           }),
           h(
             "p",
             { className: "caption" },
-            h("b", null, "EKO Web, React demo."),
-            " Buildless: one HTML file, ",
-            h("code", null, "createElement"),
-            " instead of JSX, running straight against the built library. Choose local audio files or use the test tone, press play, and switch transition mode to hear the difference at a track boundary. The spectrum reads the engine's analyser node directly.",
+            h("b", null, "EKO Web, React demo"),
+            ": the eko-web engine driven through its React binding (",
+            h("code", null, "useEkoPlayer"),
+            " and ",
+            h("code", null, "useEkoTime"),
+            "). Pick a short file, or press ",
+            h("b", null, "Use a test tone"),
+            ". Switch ",
+            h("b", null, "Gapless"),
+            ", ",
+            h("b", null, "Crossfade"),
+            " and ",
+            h("b", null, "Gap"),
+            " to hear the seam change; with a single file the queue holds it twice so there is a real boundary to hear. The ",
+            h("b", null, "GAIN"),
+            " readout says whether the loudness match came from a ReplayGain tag in the file or from the engine measuring the decoded audio itself.",
           ),
         );
       }
 
       createRoot(document.getElementById("root")).render(h(App));
+      window.__ekoBooted = true;
     </script>
   </body>
 </html>
