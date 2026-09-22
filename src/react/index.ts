@@ -107,52 +107,23 @@ function readTime(engine: EkoWebEngine): EkoTime {
  * frame, and `useEkoPlayer`'s snapshot deliberately excludes it so that scrubbing a
  * progress bar re-renders the progress bar, not everything else reading `useEkoPlayer`.
  *
- * Polls once per animation frame while the engine is playing, driven by its own `rAF`
- * loop (not the engine's internal one, which exists for its own purposes and is not part
- * of this contract). `sync` below is the only thing that starts or stops that loop, and it
- * runs on mount plus every discrete engine change (`engine.subscribe` fires synchronously,
- * before `pause()`/`play()` return), so a frame already in flight when the engine pauses
- * is always cancelled before it can fire; `tick` itself does not need to re-check. A paused
- * player never starts the loop, and an unmounted component cancels whatever frame is still
- * pending: both cost nothing.
+ * Runs no loop of its own. The engine already runs one (a private implementation detail,
+ * not part of this contract) and emits a `timeupdate` event from every place `currentTime`
+ * can change: once per frame while playing, immediately after `seek()` (including while
+ * paused), and at the natural end (carrying the final position). Between those three sites
+ * every change is covered, so a second, hook-owned loop would only do the same work twice.
+ * This hook seeds its initial value directly from the engine (the lazy `useState`
+ * initializer below), since nothing has fired yet at mount, the one case the event does
+ * not cover, then just listens.
  */
 export function useEkoTime(engine: EkoWebEngine): EkoTime {
   const [time, setTime] = useState<EkoTime>(() => readTime(engine));
 
-  useEffect(() => {
-    let handle: number | null = null;
-
-    function tick(): void {
-      setTime(readTime(engine));
-      handle = requestAnimationFrame(tick);
-    }
-
-    /** Called on mount, and again every time the engine's discrete state changes: starts
-     * the loop if it should be running and is not, stops it (cancelling the pending frame)
-     * if it should not be. */
-    function sync(): void {
-      setTime(readTime(engine));
-      if (engine.paused) {
-        if (handle !== null) {
-          cancelAnimationFrame(handle);
-          handle = null;
-        }
-      } else if (handle === null) {
-        handle = requestAnimationFrame(tick);
-      }
-    }
-
-    sync();
-    const unsubscribe = engine.subscribe(sync);
-
-    return () => {
-      unsubscribe();
-      if (handle !== null) {
-        cancelAnimationFrame(handle);
-        handle = null;
-      }
-    };
-  }, [engine]);
+  useEffect(
+    () =>
+      engine.on("timeupdate", ({ currentTime, duration }) => setTime({ currentTime, duration })),
+    [engine],
+  );
 
   return time;
 }

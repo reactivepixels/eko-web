@@ -38,6 +38,15 @@ function subscriberCount(engine: EkoWebEngine): number {
   return (engine as unknown as { subscribers: Set<unknown> }).subscribers.size;
 }
 
+/** The engine's private `timeupdate` listener set, read the same way {@link
+ * subscriberCount} reads the discrete-state one: `useEkoTime` no longer runs a loop of
+ * its own, so the only thing left to leak on unmount is this event subscription. */
+function timeupdateListenerCount(engine: EkoWebEngine): number {
+  const emitter = (engine as unknown as { emitter: { listeners: Map<string, Set<unknown>> } })
+    .emitter;
+  return emitter.listeners.get("timeupdate")?.size ?? 0;
+}
+
 /** Mount a probe component and hand back a live reference to the hook's return value,
  * plus how many times the component has rendered and an unmount function. */
 function renderPlayer(engine: EkoWebEngine) {
@@ -74,7 +83,6 @@ function renderTime(engine: EkoWebEngine) {
 function stubRaf() {
   let nextId = 1;
   const pending = new Map<number, FrameRequestCallback>();
-  const cancelled = new Set<number>();
   const originalRaf = globalThis.requestAnimationFrame;
   const originalCaf = globalThis.cancelAnimationFrame;
 
@@ -84,8 +92,10 @@ function stubRaf() {
     return id;
   }) as typeof requestAnimationFrame;
 
+  // Still stubbed (not just a no-op) so that the engine's own `stopRaf()` genuinely
+  // removes its pending frame from this queue on pause; `pendingCount()` below only stays
+  // accurate because cancelling actually clears the map.
   globalThis.cancelAnimationFrame = ((id: number): void => {
-    cancelled.add(id);
     pending.delete(id);
   }) as typeof cancelAnimationFrame;
 
@@ -103,12 +113,9 @@ function stubRaf() {
   return {
     fireFrame,
     restore,
-    /** How many frames are currently queued, across every caller (hook + engine alike). */
+    /** How many frames are currently queued (the engine's own internal loop; `useEkoTime`
+     * runs none of its own). */
     pendingCount: () => pending.size,
-    /** Every id `cancelAnimationFrame` has been called with. */
-    cancelledIds: cancelled,
-    /** Total `requestAnimationFrame` calls so far, hook and engine combined. */
-    callCount: () => nextId - 1,
   };
 }
 
@@ -337,20 +344,8 @@ describe("useEkoTime", () => {
     expect(ref.time).toEqual({ currentTime: engine.currentTime, duration: engine.duration });
   });
 
-  it("does not schedule a frame while the engine is paused", () => {
-    const raf = stubRaf();
-    restoreRaf = raf.restore;
-    const engine = makeEngine();
-
-    renderTime(engine);
-
-    expect(raf.callCount()).toBe(0);
-  });
-
-  it("starts ticking immediately when mounted while the engine is already playing", async () => {
+  it("reflects the engine's position when mounted after a load, before any playback", async () => {
     restoreFetch = stubFetch();
-    const raf = stubRaf();
-    restoreRaf = raf.restore;
     const { engine } = makeEngineWithCtx();
 
     const ready = whenReady(engine);
@@ -358,21 +353,18 @@ describe("useEkoTime", () => {
       engine.setQueue([{ id: "a", src: "/a.flac" }]);
       await ready;
     });
-    await act(async () => {
-      await engine.play();
-    });
+    // A seek while paused moves `currentTime` and emits `timeupdate`, but nothing is
+    // mounted yet to hear it: the hook must pick this up from its own initial read, since
+    // this is the "no event has fired yet" case, not from having observed that event.
+    engine.seek(0.15);
 
-    // play() already scheduled the engine's own, separate frame; note the count before
-    // mounting so the assertion below isolates the one call the hook's own on-mount sync
-    // makes, without depending on real-timer timing.
-    const callsBeforeMount = raf.callCount();
+    const { ref } = renderTime(engine);
 
-    renderTime(engine);
-
-    expect(raf.callCount()).toBe(callsBeforeMount + 1);
+    expect(ref.time.currentTime).toBeCloseTo(0.15, 3);
+    expect(ref.time.duration).toBeCloseTo(0.5, 3); // makeToneBuffer(0.5)
   });
 
-  it("ticks currentTime forward on successive animation frames while playing", async () => {
+  it("updates on successive timeupdate events while playing", async () => {
     restoreFetch = stubFetch();
     const raf = stubRaf();
     restoreRaf = raf.restore;
@@ -388,9 +380,9 @@ describe("useEkoTime", () => {
       await engine.play();
     });
 
-    // The engine's own internal RAF loop (unrelated to this hook) also schedules a frame
-    // once playback starts, so two frames are pending: the hook's, and the engine's.
-    expect(raf.pendingCount()).toBe(2);
+    // Only the engine's own per-frame loop is scheduled; useEkoTime runs no loop of its
+    // own and relies entirely on the `timeupdate` event that loop emits.
+    expect(raf.pendingCount()).toBe(1);
 
     ctx.currentTime = 0.2;
     act(() => {
@@ -405,12 +397,12 @@ describe("useEkoTime", () => {
     expect(ref.time.currentTime).toBeCloseTo(0.35, 3);
   });
 
-  it("does not schedule a second frame for a discrete change that isn't a pause", async () => {
+  it("does not update after the engine pauses", async () => {
     restoreFetch = stubFetch();
     const raf = stubRaf();
     restoreRaf = raf.restore;
-    const { engine } = makeEngineWithCtx();
-    renderTime(engine);
+    const { ctx, engine } = makeEngineWithCtx();
+    const { ref } = renderTime(engine);
 
     const ready = whenReady(engine);
     await act(async () => {
@@ -420,46 +412,70 @@ describe("useEkoTime", () => {
     await act(async () => {
       await engine.play();
     });
-    expect(raf.pendingCount()).toBe(2);
 
-    // A volume change publishes a new snapshot (so this hook's `sync` runs again) without
-    // touching `paused`. A loop already scheduled must not be scheduled a second time.
+    ctx.currentTime = 0.2;
     act(() => {
-      engine.setVolume(0.5);
+      raf.fireFrame();
     });
-
-    expect(raf.pendingCount()).toBe(2);
-  });
-
-  it("stops scheduling frames and cancels the pending one when the engine pauses", async () => {
-    restoreFetch = stubFetch();
-    const raf = stubRaf();
-    restoreRaf = raf.restore;
-    const { engine } = makeEngineWithCtx();
-    renderTime(engine);
-
-    const ready = whenReady(engine);
-    await act(async () => {
-      engine.setQueue([{ id: "a", src: "/a.flac" }]);
-      await ready;
-    });
-    await act(async () => {
-      await engine.play();
-    });
-    expect(raf.pendingCount()).toBe(2);
+    expect(ref.time.currentTime).toBeCloseTo(0.2, 3);
 
     act(() => {
       engine.pause();
     });
-
-    // Both the hook's own pending frame and the engine's separate internal one stop.
     expect(raf.pendingCount()).toBe(0);
-    // The hook's frame is the first one scheduled: play() notifies subscribers (this
-    // hook among them) before it starts the engine's own, separate RAF loop.
-    expect(raf.cancelledIds.has(1)).toBe(true);
+
+    // The clock keeps moving, as it would in a real browser, but nothing is left to fire:
+    // pausing stops the engine's loop, so no further `timeupdate` reaches the hook.
+    ctx.currentTime = 9;
+    act(() => {
+      raf.fireFrame();
+    });
+    expect(ref.time.currentTime).toBeCloseTo(0.2, 3);
   });
 
-  it("resumes ticking after a pause/resume cycle", async () => {
+  it("unmount unsubscribes from the engine's timeupdate event", () => {
+    const engine = makeEngine();
+    expect(timeupdateListenerCount(engine)).toBe(0);
+
+    const { unmount } = renderTime(engine);
+    expect(timeupdateListenerCount(engine)).toBe(1);
+
+    unmount();
+    expect(timeupdateListenerCount(engine)).toBe(0);
+  });
+
+  it("a volume change while playing does not disturb time updates or add a duplicate subscription", async () => {
+    restoreFetch = stubFetch();
+    const raf = stubRaf();
+    restoreRaf = raf.restore;
+    const { ctx, engine } = makeEngineWithCtx();
+    const { ref } = renderTime(engine);
+
+    const ready = whenReady(engine);
+    await act(async () => {
+      engine.setQueue([{ id: "a", src: "/a.flac" }]);
+      await ready;
+    });
+    await act(async () => {
+      await engine.play();
+    });
+    expect(timeupdateListenerCount(engine)).toBe(1);
+
+    // A volume change publishes a new discrete snapshot. useEkoTime never subscribed to
+    // that channel, so this must not add a second `timeupdate` listener.
+    act(() => {
+      engine.setVolume(0.5);
+    });
+    expect(timeupdateListenerCount(engine)).toBe(1);
+
+    ctx.currentTime = 0.3;
+    act(() => {
+      raf.fireFrame();
+    });
+    expect(ref.time.currentTime).toBeCloseTo(0.3, 3);
+  });
+
+  it("resumes updates after a pause/resume cycle", async () => {
     restoreFetch = stubFetch();
     const raf = stubRaf();
     restoreRaf = raf.restore;
@@ -483,8 +499,9 @@ describe("useEkoTime", () => {
       await engine.play();
     });
 
-    // A frame must be pending again, or the loop died for good after the first pause.
-    expect(raf.pendingCount()).toBe(2);
+    // The engine's loop must be running again, or playback resumed with no way left to
+    // reach this hook.
+    expect(raf.pendingCount()).toBe(1);
 
     ctx.currentTime += 0.4;
     act(() => {
@@ -492,42 +509,6 @@ describe("useEkoTime", () => {
     });
 
     expect(ref.time.currentTime).toBeCloseTo(engine.currentTime, 3);
-  });
-
-  it("cancels the pending frame on unmount", async () => {
-    restoreFetch = stubFetch();
-    const raf = stubRaf();
-    restoreRaf = raf.restore;
-    const { engine } = makeEngineWithCtx();
-    const { unmount } = renderTime(engine);
-
-    const ready = whenReady(engine);
-    await act(async () => {
-      engine.setQueue([{ id: "a", src: "/a.flac" }]);
-      await ready;
-    });
-    await act(async () => {
-      await engine.play();
-    });
-    expect(raf.pendingCount()).toBe(2);
-
-    unmount();
-
-    // Only the hook's own handle is cancelled; the engine keeps playing (and keeps its
-    // own separate frame pending) because unmounting a consumer must not touch the engine.
-    expect(raf.cancelledIds.has(1)).toBe(true);
-    expect(raf.pendingCount()).toBe(1);
-  });
-
-  it("unmounting unsubscribes from the engine", () => {
-    const engine = makeEngine();
-    expect(subscriberCount(engine)).toBe(0);
-
-    const { unmount } = renderTime(engine);
-    expect(subscriberCount(engine)).toBe(1);
-
-    unmount();
-    expect(subscriberCount(engine)).toBe(0);
   });
 
   it("a time-only update re-renders the time consumer but not the player consumer", async () => {
