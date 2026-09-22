@@ -114,6 +114,7 @@
       import { EkoWebEngine } from "../../dist/index.js";
       import { useEkoPlayer, useEkoTime } from "../../dist/react.js";
       import { readReplayGain } from "../../dist/replaygain.js";
+      import { attachSpectrum } from "../shared/spectrum.js";
 
       const TRANSITIONS = ["gapless", "crossfade", "gap"];
 
@@ -238,45 +239,23 @@
       }
 
       /**
-       * The spectrum reads `engine.analyser` directly on a `requestAnimationFrame` loop.
-       * That is a live audio-graph tap, not application state, so it does not go through
-       * `useEkoPlayer` or a snapshot; drawing it that way would either re-render the whole
-       * player 60 times a second or lag a frame behind. Same rAF loop as the vanilla
-       * demo's own frame() function, just scoped to this component's canvas ref.
+       * EKO's own segmented LED display (examples/shared/spectrum.js), shared with the
+       * other demos so all three read as the same instrument. The effect runs once, for
+       * this component's canvas, and hands attachSpectrum a getter rather than
+       * `engine.analyser` itself: the engine builds its graph lazily, and a transition-mode
+       * switch replaces the whole engine object, so a value captured at effect-setup time
+       * would go stale the moment that happens. `engineRef` is kept current on every
+       * render so the getter always reads the live engine no matter how long the effect
+       * (and its one canvas) has been mounted.
        */
-      function Spectrum({ engine, specColor }) {
+      function Spectrum({ engine }) {
         const canvasRef = useRef(null);
+        const engineRef = useRef(engine);
+        engineRef.current = engine;
 
         useEffect(() => {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d");
-          let bins = null;
-          let raf = 0;
-
-          function frame() {
-            canvas.width = canvas.clientWidth;
-            canvas.height = canvas.clientHeight;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const analyser = engine.analyser;
-            if (analyser.fftSize !== 2048) analyser.fftSize = 2048;
-            if (!bins || bins.length !== analyser.frequencyBinCount) {
-              bins = new Uint8Array(analyser.frequencyBinCount);
-            }
-            analyser.getByteFrequencyData(bins);
-            const width = canvas.width / bins.length;
-            for (let i = 0; i < bins.length; i++) {
-              const height = (bins[i] / 255) * canvas.height;
-              const alpha = 0.35 + (bins[i] / 255) * 0.65;
-              ctx.fillStyle = `rgba(${specColor}, ${alpha})`;
-              ctx.fillRect(i * width, canvas.height - height, Math.ceil(width), height);
-            }
-            raf = requestAnimationFrame(frame);
-          }
-
-          raf = requestAnimationFrame(frame);
-          return () => cancelAnimationFrame(raf);
-        }, [engine, specColor]);
+          return attachSpectrum(canvasRef.current, () => engineRef.current.analyser);
+        }, []);
 
         return h("div", { className: "ew-spec" }, h("canvas", { ref: canvasRef }));
       }
@@ -292,7 +271,6 @@
         trackGainInfo,
         transitionMode,
         onTransitionChange,
-        specColor,
         theme,
         onToggleTheme,
         onFileChange,
@@ -395,7 +373,7 @@
             errorMsg ? h("span", { className: "ew-err" }, errorMsg) : null,
           ),
 
-          h(Spectrum, { engine, specColor }),
+          h(Spectrum, { engine }),
 
           h(
             "div",
@@ -425,7 +403,7 @@
               {
                 className: "seal",
                 title:
-                  "Lossless decode plus real DSP, but the browser resamples to the system rate. Install EKO for true bit-perfect, native-rate output.",
+                  "The rate the browser is mixing at. Audio is decoded and resampled to this rate, so what you hear is not the file's own rate.",
               },
               h(
                 "span",
@@ -443,7 +421,11 @@
                   h("path", { d: "M3 12h3l2-5 4 10 2-5h7" }),
                 ),
               ),
-              h("span", { className: "sl" }, "LOSSLESS"),
+              h(
+                "span",
+                { className: "sl" },
+                `${Math.round(engine.context.sampleRate / 100) / 10} kHz`,
+              ),
             ),
           ),
 
@@ -567,26 +549,14 @@
             h(
               "div",
               { className: "ew-note" },
-              "Lossless decode, a real gapless and crossfade scheduler, and a live spectrum, in the browser. But the browser ",
-              h("b", null, "resamples to your system rate"),
-              ", so it cannot go bit-perfect.",
+              "A real gapless and crossfade scheduler, loudness matching from ReplayGain tags, and a live spectrum, all in the browser. Whatever you feed it is decoded and ",
+              h("b", null, "resampled to your system rate"),
+              ", so this is not bit-perfect and does not pretend to be.",
             ),
             h(
               "a",
-              { className: "ew-dl", href: "https://reactivepixels.com/eko" },
-              h(
-                "svg",
-                {
-                  viewBox: "0 0 24 24",
-                  fill: "none",
-                  stroke: "currentColor",
-                  strokeWidth: "2",
-                  strokeLinecap: "round",
-                  strokeLinejoin: "round",
-                },
-                h("path", { d: "M12 3v13M7 11l5 5 5-5M5 21h14" }),
-              ),
-              "Get EKO for bit-perfect",
+              { className: "ew-dl", href: "https://github.com/reactivepixels/eko-web" },
+              "eko-web on GitHub",
             ),
           ),
         );
@@ -598,7 +568,6 @@
             ? "dark"
             : "light",
         );
-        const [specColor, setSpecColor] = useState("128,128,128");
         const [transitionMode, setTransitionMode] = useState("gapless");
         const [engine, setEngine] = useState(
           () => new EkoWebEngine({ normalize: true, transition: "gapless", crossfadeSeconds: 3 }),
@@ -616,10 +585,6 @@
         // matches when an ANCESTOR of <body> carries the attribute.
         useEffect(() => {
           document.documentElement.setAttribute("data-theme", theme);
-          const value = getComputedStyle(document.documentElement)
-            .getPropertyValue("--spec")
-            .trim();
-          if (value) setSpecColor(value);
         }, [theme]);
 
         // The engine owns its `analyser` and audio graph, so this is the one place it is
@@ -776,7 +741,6 @@
             trackGainInfo,
             transitionMode,
             onTransitionChange: setTransitionMode,
-            specColor,
             theme,
             onToggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
             onFileChange,
