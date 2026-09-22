@@ -126,9 +126,20 @@ export function useEkoTime(engine: EkoWebEngine): EkoTime {
     // the old engine's last position until the new one emits, which never happens if the
     // new engine is paused.
     setTime(readTime(engine));
-    return engine.on("timeupdate", ({ currentTime, duration }) =>
+    const offTime = engine.on("timeupdate", ({ currentTime, duration }) =>
       setTime({ currentTime, duration }),
     );
+    // `timeupdate` only fires while something is playing, after a seek, and at the end.
+    // A track that has loaded and is sitting idle announces itself with `durationchange`
+    // alone, so without this a progress bar has no scale and a track's length cannot be
+    // shown until the listener presses play.
+    const offDuration = engine.on("durationchange", ({ duration }) =>
+      setTime((previous) => ({ currentTime: previous.currentTime, duration })),
+    );
+    return () => {
+      offTime();
+      offDuration();
+    };
   }, [engine]);
 
   return time;

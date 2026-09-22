@@ -132,11 +132,21 @@ export function useEkoTime(engine: MaybeRefOrGetter<EkoWebEngine>): EkoTime {
     (current, _previous, onCleanup) => {
       currentTime.value = current.currentTime;
       duration.value = current.duration;
-      const unsubscribe = current.on("timeupdate", (payload) => {
+      const offTime = current.on("timeupdate", (payload) => {
         currentTime.value = payload.currentTime;
         duration.value = payload.duration;
       });
-      onCleanup(unsubscribe);
+      // `timeupdate` only fires while something is playing, after a seek, and at the end.
+      // A track that has loaded and is sitting idle announces itself with `durationchange`
+      // alone, so without this a progress bar has no scale and a track's length cannot be
+      // shown until the listener presses play.
+      const offDuration = current.on("durationchange", (payload) => {
+        duration.value = payload.duration;
+      });
+      onCleanup(() => {
+        offTime();
+        offDuration();
+      });
     },
     { immediate: true },
   );

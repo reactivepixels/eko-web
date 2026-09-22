@@ -410,6 +410,25 @@ describe("useEkoPlayer", () => {
 });
 
 describe("useEkoTime", () => {
+  it("reports a loaded track's duration before anything has played", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngineWithCtx();
+    const { ref } = renderTime(engine);
+    expect(ref.time.duration).toBe(0);
+
+    const ready = whenReady(engine);
+    await act(async () => {
+      engine.setQueue([{ id: "a", src: "/a.flac" }]);
+      await ready;
+    });
+
+    // The engine announces a loaded track with `durationchange`, not `timeupdate`, so a
+    // hook listening only for the latter shows a zero-length track until the listener
+    // presses play. A progress bar cannot render its own scale, and a track's length
+    // cannot be displayed, which is the ordinary state of a player sitting idle.
+    expect(ref.time.duration).toBeCloseTo(0.5, 6);
+    expect(ref.time.currentTime).toBe(0);
+  });
   it("reseeds from the new engine when the engine it is given changes", async () => {
     restoreFetch = stubFetch();
     const a = makeEngineWithCtx();

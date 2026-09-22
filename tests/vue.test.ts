@@ -324,6 +324,24 @@ describe("useEkoPlayer", () => {
 });
 
 describe("useEkoTime", () => {
+  it("reports a loaded track's duration before anything has played", async () => {
+    restoreFetch = stubFetch();
+    const { engine } = makeEngineWithCtx();
+    const { result: time, scope } = runInScope(() => useEkoTime(engine));
+    expect(time.duration.value).toBe(0);
+
+    const ready = whenReady(engine);
+    engine.setQueue([{ id: "a", src: "/a.flac" }]);
+    await ready;
+    await nextTick();
+
+    // The engine announces a loaded track with `durationchange`, not `timeupdate`, so a
+    // composable listening only for the latter shows a zero-length track until the
+    // listener presses play, which is the ordinary state of a player sitting idle.
+    expect(time.duration.value).toBeCloseTo(0.5, 6);
+    expect(time.currentTime.value).toBe(0);
+    scope.stop();
+  });
   it("returns refs with the engine's currentTime and duration", () => {
     const engine = makeEngine();
     const { result: time, scope } = runInScope(() => useEkoTime(engine));
