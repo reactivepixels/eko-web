@@ -18,7 +18,7 @@ About 12&nbsp;kB, no runtime dependencies, and no framework of its own.
 
 <img src="https://raw.githubusercontent.com/reactivepixels/eko-web/main/.github/media/player.gif" alt="The player running, with a live segmented spectrum" width="760">
 
-<sub>The demo player in `examples/`, running the library. Not a mockup.</sub>
+<sub>The <a href="https://reactivepixels.com/eko-web/">live demo</a>, running this library. Not a mockup.</sub>
 
 </div>
 

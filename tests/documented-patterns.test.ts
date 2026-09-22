@@ -11,7 +11,7 @@
  * unmount. Creating one in a render body gives a fresh AudioContext on every state change,
  * and browsers cap those at around six per page.
  */
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { createElement, useState, useEffect } from "react";
 import { render, cleanup, act } from "@testing-library/react";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
