@@ -66,6 +66,11 @@
       even with gapless. On auto a local file always takes the buffer path. The test tone is a
       continuous 440 Hz sine of exactly 880 cycles, so its loop point is phase continuous: with
       gapless on you should hear one unbroken tone, and with gap mode a click every two seconds.
+      Every file you pick is read for a ReplayGain tag (<code>@rpxl/eko-web/replaygain</code>)
+      before it's queued, and the <b>loudness source</b> readout says which number the engine is
+      actually using: <code>tag</code> when the file carried a ReplayGain gain,
+      <code>measured</code> when it didn't and the engine analyzed the decoded audio instead. The
+      test tone carries no tag, so it always reads measured.
     </p>
 
     <div class="row">
@@ -113,6 +118,8 @@
       <dd id="source">-</dd>
       <dt>normalize</dt>
       <dd id="normalize">-</dd>
+      <dt>loudness source</dt>
+      <dd id="loudness-source">-</dd>
       <dt>transition</dt>
       <dd id="transition">-</dd>
       <dt>queue position</dt>
@@ -149,6 +156,10 @@
 
     <script type="module">
       import { EkoWebEngine, linearToDb } from "../../dist/index.js";
+      // The engine deliberately does not import this subpath itself (see the design doc):
+      // reading tags is the CONSUMER's job. This harness plays that consumer, exactly like a
+      // real app would: read the tag, then hand the result in as `EkoTrack.gainDb`.
+      import { readReplayGain } from "../../dist/replaygain.js";
 
       const $ = (id) => document.getElementById(id);
 
@@ -158,6 +169,17 @@
       let bins = null;
       let currentFiles = [];
       let objectUrls = [];
+      // Parallel to the engine's queue: for each queued track, where its gainDb (if any)
+      // came from. Populated by loadFiles(), read by the subscribe() callback below so the
+      // "loudness source" readout can say which fact backs the applied gain, not just the
+      // number itself.
+      let trackGainInfo = [];
+      // Bumped on every loadFiles() call. readTrackGain() awaits a tag read per file, so two
+      // overlapping calls (e.g. two controls flipped in quick succession, each triggering
+      // rebuild() -> loadFiles()) are possible; whichever call's token is stale by the time
+      // its awaits resolve discards its own results instead of clobbering the newer call's
+      // engine.setQueue()/objectUrls/trackGainInfo with stale data.
+      let loadToken = 0;
 
       /**
        * The boundary policy and queue options are construction-time options, so flipping any
@@ -193,6 +215,9 @@
           $("play").textContent = snapshot.paused ? "Play" : "Pause";
           $("normalize").textContent = snapshot.track
             ? `${linearToDb(engine.normGain).toFixed(2)} dB applied`
+            : "-";
+          $("loudness-source").textContent = snapshot.track
+            ? describeGainInfo(trackGainInfo[snapshot.index])
             : "-";
           $("queue-position").textContent = snapshot.track
             ? `${snapshot.index + 1} / ${snapshot.queueLength}`
@@ -245,38 +270,87 @@
         return new Blob([bytes], { type: "audio/wav" });
       }
 
+      /** What the "loudness source" readout shows for one queue slot. */
+      function describeGainInfo(info) {
+        if (!info) return "-";
+        if (info.source === "tag") {
+          return `tag: ${info.gainDb.toFixed(2)} dB (from file)`;
+        }
+        return "measured (no tag in file; engine analyzed the audio)";
+      }
+
+      /**
+       * Reads a ReplayGain tag from `objectUrl` via the replaygain subpath and returns both
+       * the queue entry (`gainDb` set only when a tag was actually found) and the readout
+       * info that says which of the two facts it is. Note: an object URL does not support
+       * HTTP Range requests, so `readReplayGain` -> `fetchReplayGain`'s Range GET comes back
+       * as a plain 200 with the whole blob rather than a 206 partial response; its
+       * `wholeFile` fallback (see fetch-range.ts) is what actually runs here, not the
+       * range-limited path a real HTTP server would take. Confirmed against Chrome: the
+       * blob is small (a picked audio file or the synthesized test tone), so reading the
+       * whole thing costs nothing observable.
+       */
+      async function readTrackGain(id, objectUrl) {
+        const tags = await readReplayGain(objectUrl);
+        if (typeof tags.gainDb === "number") {
+          return {
+            track: { id, src: objectUrl, gainDb: tags.gainDb },
+            info: { source: "tag", gainDb: tags.gainDb },
+          };
+        }
+        return { track: { id, src: objectUrl }, info: { source: "measured" } };
+      }
+
       /**
        * Load one or more files into the queue. If a single file is provided,
        * queue it twice so the loop seam is a real track boundary.
        */
-      function loadFiles(files) {
-        objectUrls.forEach((url) => URL.revokeObjectURL(url));
+      async function loadFiles(files) {
+        const token = ++loadToken;
+        const previousUrls = objectUrls;
         objectUrls = [];
 
         if (files.length === 0) {
+          previousUrls.forEach((url) => URL.revokeObjectURL(url));
+          trackGainInfo = [];
           $("play").disabled = true;
           return;
         }
 
-        const queue = [];
         let trackId = 0;
+        const entries = [];
+        const newUrls = [];
 
         if (files.length === 1) {
-          // Single file: queue it twice for the loop test
+          // Single file: queue it twice for the loop test. Read the tag once and reuse the
+          // result for both slots: it's the same bytes, so a second read would only be a
+          // second fetch of the same answer.
           const objectUrl = URL.createObjectURL(files[0]);
-          objectUrls.push(objectUrl);
-          queue.push({ id: `track-${trackId++}`, src: objectUrl });
-          queue.push({ id: `track-${trackId++}`, src: objectUrl });
+          newUrls.push(objectUrl);
+          const first = await readTrackGain(`track-${trackId++}`, objectUrl);
+          entries.push(first);
+          entries.push({ track: { ...first.track, id: `track-${trackId++}` }, info: first.info });
         } else {
-          // Multiple files: queue each once
-          files.forEach((file) => {
+          // Multiple files: queue each once, reading its own tag.
+          for (const file of files) {
             const objectUrl = URL.createObjectURL(file);
-            objectUrls.push(objectUrl);
-            queue.push({ id: `track-${trackId++}`, src: objectUrl });
-          });
+            newUrls.push(objectUrl);
+            entries.push(await readTrackGain(`track-${trackId++}`, objectUrl));
+          }
         }
 
-        engine.setQueue(queue);
+        if (token !== loadToken) {
+          // Superseded by a later loadFiles() call while our tag reads were in flight: drop
+          // our own results and clean up only the URLs we ourselves created, since the
+          // newer call already owns `objectUrls`/`engine`/`trackGainInfo`.
+          newUrls.forEach((url) => URL.revokeObjectURL(url));
+          return;
+        }
+
+        previousUrls.forEach((url) => URL.revokeObjectURL(url));
+        objectUrls = newUrls;
+        engine.setQueue(entries.map((e) => e.track));
+        trackGainInfo = entries.map((e) => e.info);
         $("play").disabled = false;
       }
 
