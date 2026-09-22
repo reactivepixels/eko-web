@@ -102,3 +102,86 @@ export function buildApev2(
   const header = buildBlock(tagSize, itemCount, headerFlags);
   return new Uint8Array([...header, ...itemBytes, ...footer]);
 }
+
+/**
+ * Hand-built MP4/M4A atom bytes: just the `moov.udta.meta.ilst` chain that carries
+ * ReplayGain freeform tags, not a full playable file (no `ftyp`, no `mdat`; `mp4.ts`
+ * only ever walks the `moov` branch, so nothing else is needed to exercise it).
+ *
+ * There is no encoder available on this machine that writes these tags into an
+ * MP4/M4A file: ffmpeg silently drops `-metadata REPLAYGAIN_*` for this container,
+ * and AtomicParsley, mp4tags and mid3v2 are all absent. So, like this file's APEv2
+ * builder above, this one is built straight from the same reading of the spec that
+ * `mp4.ts`'s parser is written from: if that reading is wrong, both sides agree and
+ * every test built on it passes anyway. Every field below gets its own commented
+ * line so a reviewer who knows the format can check it by eye, and `mp4.test.ts`
+ * says the same thing again next to the tests that rely on it.
+ *
+ * Every atom: 4-byte big-endian size (the WHOLE atom, header included), then a
+ * 4-byte ASCII type, then its payload.
+ *
+ * A ReplayGain tag lives in a freeform `----` atom inside `ilst`, itself three child
+ * atoms:
+ *   `mean` atom: 4-byte version/flags (zero), then ASCII "com.apple.iTunes"
+ *   `name` atom: 4-byte version/flags (zero), then the ASCII key, e.g.
+ *                "replaygain_track_gain"
+ *   `data` atom: 4-byte type indicator (1 = UTF-8 text), 4-byte locale/country
+ *                (zero), then the ASCII value bytes, e.g. "-6.50 dB"
+ *
+ * `meta` is the one atom in this chain whose payload carries its own 4-byte
+ * version/flags field BEFORE its children (`moov`, `udta` and `ilst` do not): that
+ * field is written here too, so a parser that fails to skip it misaligns everything
+ * that follows.
+ */
+
+const MEAN_APPLE_ITUNES = "com.apple.iTunes";
+const FREEFORM_TYPE = "----";
+
+function u32be(n: number): number[] {
+  return [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+}
+
+/** One atom: 4-byte big-endian size (header + payload), 4-byte ASCII type, payload. */
+function atom(type: string, payload: number[]): number[] {
+  const size = 8 + payload.length; // header (4-byte size + 4-byte type) + payload
+  return [...u32be(size), ...asciiBytes(type), ...payload];
+}
+
+/** One freeform `----` item: `mean` ("com.apple.iTunes") + `name` (the key) +
+ * `data` (type indicator 1, locale 0, the value bytes), each a full child atom. */
+function buildFreeformItem(key: string, value: string): number[] {
+  const mean = atom("mean", [
+    ...u32be(0), // version/flags: zero
+    ...asciiBytes(MEAN_APPLE_ITUNES),
+  ]);
+  const name = atom("name", [
+    ...u32be(0), // version/flags: zero
+    ...asciiBytes(key),
+  ]);
+  const data = atom("data", [
+    ...u32be(1), // type indicator: 1 = UTF-8 text
+    ...u32be(0), // locale/country: 0
+    ...asciiBytes(value), // ReplayGain values are plain ASCII decimals (+ unit)
+  ]);
+  return atom(FREEFORM_TYPE, [...mean, ...name, ...data]);
+}
+
+/**
+ * Builds the `moov.udta.meta.ilst` atom chain carrying one freeform `----` item per
+ * key/value pair, in insertion order.
+ */
+export function buildMp4(items: Record<string, string>): Uint8Array {
+  const freeformItems = Object.entries(items).flatMap(([key, value]) =>
+    buildFreeformItem(key, value),
+  );
+
+  const ilst = atom("ilst", freeformItems);
+  const meta = atom("meta", [
+    ...u32be(0), // meta's own version/flags field, BEFORE its children: the one atom
+    // in this chain that has one (moov/udta/ilst do not)
+    ...ilst,
+  ]);
+  const udta = atom("udta", meta);
+  const moov = atom("moov", udta);
+  return new Uint8Array(moov);
+}
