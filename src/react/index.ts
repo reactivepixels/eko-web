@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { EkoWebEngine } from "../engine/eko-web-engine";
 import type { EkoSnapshot } from "../engine/snapshot";
 import type { RepeatMode } from "../queue/queue";
@@ -89,4 +89,70 @@ export function useEkoPlayer(engine: EkoWebEngine): EkoPlayer {
     }),
     [snapshot, bound],
   );
+}
+
+/** `useEkoTime`'s return value: just the two fields that change every frame. */
+export interface EkoTime {
+  readonly currentTime: number;
+  readonly duration: number;
+}
+
+function readTime(engine: EkoWebEngine): EkoTime {
+  return { currentTime: engine.currentTime, duration: engine.duration };
+}
+
+/**
+ * Subscribe a component to an {@link EkoWebEngine}'s `currentTime`, on its own hook. See
+ * the module doc on {@link EkoPlayer} for why: `currentTime` changes every animation
+ * frame, and `useEkoPlayer`'s snapshot deliberately excludes it so that scrubbing a
+ * progress bar re-renders the progress bar, not everything else reading `useEkoPlayer`.
+ *
+ * Polls once per animation frame while the engine is playing, driven by its own `rAF`
+ * loop (not the engine's internal one, which exists for its own purposes and is not part
+ * of this contract). `sync` below is the only thing that starts or stops that loop, and it
+ * runs on mount plus every discrete engine change (`engine.subscribe` fires synchronously,
+ * before `pause()`/`play()` return), so a frame already in flight when the engine pauses
+ * is always cancelled before it can fire; `tick` itself does not need to re-check. A paused
+ * player never starts the loop, and an unmounted component cancels whatever frame is still
+ * pending: both cost nothing.
+ */
+export function useEkoTime(engine: EkoWebEngine): EkoTime {
+  const [time, setTime] = useState<EkoTime>(() => readTime(engine));
+
+  useEffect(() => {
+    let handle: number | null = null;
+
+    function tick(): void {
+      setTime(readTime(engine));
+      handle = requestAnimationFrame(tick);
+    }
+
+    /** Called on mount, and again every time the engine's discrete state changes: starts
+     * the loop if it should be running and is not, stops it (cancelling the pending frame)
+     * if it should not be. */
+    function sync(): void {
+      setTime(readTime(engine));
+      if (engine.paused) {
+        if (handle !== null) {
+          cancelAnimationFrame(handle);
+          handle = null;
+        }
+      } else if (handle === null) {
+        handle = requestAnimationFrame(tick);
+      }
+    }
+
+    sync();
+    const unsubscribe = engine.subscribe(sync);
+
+    return () => {
+      unsubscribe();
+      if (handle !== null) {
+        cancelAnimationFrame(handle);
+        handle = null;
+      }
+    };
+  }, [engine]);
+
+  return time;
 }
