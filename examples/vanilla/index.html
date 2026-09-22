@@ -127,7 +127,7 @@
         <div class="node o"><span class="k">OUTPUT</span><span class="v">System mixer</span></div>
         <div
           class="seal"
-          title="Lossless decode plus real DSP, but the browser resamples to the system rate. Install EKO for true bit-perfect, native-rate output."
+          title="The rate the browser is mixing at. Audio is decoded and resampled to this rate, so what you hear is not the file's own rate."
         >
           <span class="ring">
             <svg
@@ -141,7 +141,7 @@
               <path d="M3 12h3l2-5 4 10 2-5h7" />
             </svg>
           </span>
-          <span class="sl">LOSSLESS</span>
+          <span class="sl" id="ewRate">MIXER</span>
         </div>
       </div>
 
@@ -214,23 +214,12 @@
 
       <div class="ew-foot">
         <div class="ew-note">
-          Lossless decode, a real gapless and crossfade scheduler, and a live spectrum, in the
-          browser. But the browser <b>resamples to your system rate</b>, so it cannot go
-          bit-perfect.
+          A real gapless and crossfade scheduler, loudness matching from ReplayGain tags, and a live
+          spectrum, all in the browser. Whatever you feed it is decoded and
+          <b>resampled to your system rate</b>, so this is not bit-perfect and does not pretend to
+          be.
         </div>
-        <a class="ew-dl" href="https://reactivepixels.com/eko">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M12 3v13M7 11l5 5 5-5M5 21h14" />
-          </svg>
-          Get EKO for bit-perfect
-        </a>
+        <a class="ew-dl" href="https://github.com/reactivepixels/eko-web"> eko-web on GitHub </a>
       </div>
     </div>
 
@@ -271,6 +260,7 @@
       // Reading a file's tag is the consumer's job, not the engine's (see the design doc):
       // this demo plays that consumer, exactly like a real app would.
       import { readReplayGain } from "../../dist/replaygain.js";
+      import { attachSpectrum } from "../shared/spectrum.js";
 
       const $ = (id) => document.getElementById(id);
 
@@ -342,6 +332,7 @@
         tone: $("ewTone"),
         err: $("ewErr"),
         canvas: $("ewSpec"),
+        rate: $("ewRate"),
         src: $("ewSrc"),
         queue: $("ewQueue"),
         gain: $("ewGain"),
@@ -662,31 +653,16 @@
       // The spectrum: drawn straight from engine.analyser, per the spec (this is real-time
       // byte data, not state a binding should be re-rendering over; subscribe()/timeupdate
       // are for the discrete/continuous state the library models, this is a raw Web Audio
-      // tap). A plain rAF loop, same as examples/player/index.html, reading whichever engine
-      // is current each frame so a transition-mode swap doesn't need to restart it.
-      let bins = null;
-      function frame() {
-        const ctx2d = els.canvas.getContext("2d");
-        els.canvas.width = els.canvas.clientWidth;
-        els.canvas.height = els.canvas.clientHeight;
-        ctx2d.clearRect(0, 0, els.canvas.width, els.canvas.height);
+      // tap).
+      // EKO's own segmented LED display, shared with the other demos so all three read as
+      // the same instrument. It asks for the analyser each frame rather than capturing it,
+      // because the engine builds its graph lazily and a transition swap replaces it.
+      attachSpectrum(els.canvas, () => engine.analyser);
 
-        const analyser = engine.analyser;
-        if (analyser.fftSize !== 2048) analyser.fftSize = 2048;
-        if (!bins || bins.length !== analyser.frequencyBinCount) {
-          bins = new Uint8Array(analyser.frequencyBinCount);
-        }
-        analyser.getByteFrequencyData(bins);
-        const width = els.canvas.width / bins.length;
-        for (let i = 0; i < bins.length; i++) {
-          const height = (bins[i] / 255) * els.canvas.height;
-          const alpha = 0.35 + (bins[i] / 255) * 0.65;
-          ctx2d.fillStyle = `rgba(${specColor}, ${alpha})`;
-          ctx2d.fillRect(i * width, els.canvas.height - height, Math.ceil(width), height);
-        }
-        requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
+      // The one honest thing to say about the output path: the rate the browser is mixing
+      // at. Everything is decoded and resampled to this, which is exactly why the note
+      // below the player says this is not bit-perfect.
+      els.rate.textContent = `${Math.round(engine.context.sampleRate / 100) / 10} kHz`;
 
       window.__ekoBooted = true;
     </script>
