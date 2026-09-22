@@ -6,10 +6,11 @@
  * drawing it instead means the same title always produces the same cover, every track
  * looks distinct, and there is nothing to license.
  *
- * One composition, in the spirit of the player it sits in: concentric rings on the exact
- * centre, one warm accent arc, a warm ground. The rings stay centred because anything else
- * reads as a layout bug in a small square slot; each track varies in ring count, spacing,
- * the accent's position and the ground tone instead.
+ * One composition, in the spirit of the player it sits in: a frozen frame of its LED
+ * spectrum. A full grid of segments fills the square edge to edge with an equal margin, so
+ * there is no single point for the eye to find off centre. The title decides which
+ * segments are lit, shaped as a smooth curve so it reads as a spectrum rather than noise,
+ * and one warm segment marks the peak.
  */
 
 /** A small, stable string hash, so the same title always draws the same cover. */
@@ -31,20 +32,6 @@ function rng(seed) {
     s ^= s << 5;
     return ((s >>> 0) % 100000) / 100000;
   };
-}
-
-/** A point on a circle around (cx, cy), in SVG coordinates. */
-function pointOn(cx, cy, radius, degrees) {
-  const rad = (degrees * Math.PI) / 180;
-  return `${(cx + radius * Math.cos(rad)).toFixed(2)} ${(cy + radius * Math.sin(rad)).toFixed(2)}`;
-}
-
-/** An arc path of `sweep` degrees on `radius`, starting at `from`. */
-function arcPath(cx, cy, radius, from, sweep) {
-  const large = sweep > 180 ? 1 : 0;
-  const a = pointOn(cx, cy, radius, from);
-  const b = pointOn(cx, cy, radius, from + sweep);
-  return `M${a} A${radius} ${radius} 0 ${large} 1 ${b}`;
 }
 
 /**
@@ -71,25 +58,50 @@ export function coverFor(title, opts = {}) {
   const inkTop = dark ? 0.3 : 0.36;
   const lift = dark ? "#4a5260" : "#fdfcf8";
 
-  const cx = 50;
-  const cy = 50;
+  // The grid: equal margin on every side, equal gaps between columns and between rows.
+  const cols = 9;
+  const rows = 9;
+  const margin = 14;
+  const gap = 2.2;
+  const span = 100 - margin * 2;
+  const cellW = (span - gap * (cols - 1)) / cols;
+  const cellH = (span - gap * (rows - 1)) / rows;
 
-  const count = 4 + Math.floor(r() * 3); // 4 to 6
-  const inner = 8 + r() * 5;
-  // The outermost ring sits 9 units inside the edge, the same margin on every side.
-  const outer = 41;
-  const step = (outer - inner) / (count - 1);
-
-  let motif = `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(inner * 0.5).toFixed(1)}" fill="${ink}" fill-opacity="${dark ? 0.14 : 0.17}"/>`;
-  for (let i = 0; i < count; i++) {
-    motif += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(inner + i * step).toFixed(1)}" fill="none" stroke="${ink}" stroke-opacity="${(inkTop - i * 0.03).toFixed(3)}" stroke-width="1.1"/>`;
+  // Two seeded sine waves summed into one smooth curve, so neighbouring columns relate the
+  // way a real spectrum's bands do. Each column lights at least two segments, and never
+  // the full height, so every cover has both a shape and some headroom above it.
+  const f1 = 0.5 + r() * 0.9;
+  const f2 = 1.4 + r() * 1.6;
+  const p1 = r() * Math.PI * 2;
+  const p2 = r() * Math.PI * 2;
+  const heights = [];
+  for (let c = 0; c < cols; c++) {
+    const x = c / (cols - 1);
+    const v = 0.55 + 0.3 * Math.sin(x * Math.PI * f1 + p1) + 0.15 * Math.sin(x * Math.PI * f2 + p2);
+    heights.push(Math.max(2, Math.min(rows - 1, Math.round(v * (rows - 1)))));
   }
+  const peakCol = heights.indexOf(Math.max(...heights));
 
-  // One accent stroke: the single warm mark the rest of the composition is arranged
-  // around. It rides one of the rings, so it belongs to the geometry rather than crossing it.
-  const accentRadius = inner + (1 + Math.floor(r() * (count - 1))) * step;
-  const from = Math.floor(r() * 360);
-  const sweep = 40 + Math.floor(r() * 55);
+  let motif = "";
+  for (let c = 0; c < cols; c++) {
+    const x = margin + c * (cellW + gap);
+    for (let i = 0; i < rows; i++) {
+      // Row 0 is the bottom segment.
+      const y = margin + (rows - 1 - i) * (cellH + gap);
+      const lit = i < heights[c];
+      const isPeak = c === peakCol && i === heights[c] - 1;
+      const fill = isPeak ? accent : ink;
+      // Lit segments fade a little towards the top, like the live display's falloff.
+      const opacity = isPeak
+        ? 1
+        : lit
+          ? (inkTop + 0.1 - (i / rows) * 0.12).toFixed(3)
+          : dark
+            ? 0.06
+            : 0.07;
+      motif += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" rx="0.8" fill="${fill}" fill-opacity="${opacity}"/>`;
+    }
+  }
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
@@ -105,7 +117,6 @@ export function coverFor(title, opts = {}) {
 <rect width="100" height="100" fill="url(#g)"/>
 <rect width="100" height="100" fill="url(#h)"/>
 ${motif}
-<path d="${arcPath(cx, cy, accentRadius, from, sweep)}" fill="none" stroke="${accent}" stroke-width="2.4" stroke-linecap="round"/>
 <rect x="0.5" y="0.5" width="99" height="99" fill="none" stroke="${ink}" stroke-opacity="0.08"/>
 </svg>`.replace(/\n/g, "");
 
