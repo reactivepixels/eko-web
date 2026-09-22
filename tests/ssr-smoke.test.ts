@@ -24,6 +24,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
  * sandbox that has no `navigator` at all. Removing it turns that gap into a hard
  * `ReferenceError`/`TypeError` right here, which is the failure mode this test exists to
  * catch.
+ *
+ * M4 adds the `react` and `vue` subpaths to this suite. Both are Node-environment tests
+ * (no jsdom): the React binding's own render-based tests live in `react.test.ts` under a
+ * per-file jsdom environment directive, and this file must NOT adopt one, because jsdom
+ * supplies a real `window`/`document`/`navigator` and would silently defeat the one thing
+ * this suite exists to catch. The React case here only imports the module and
+ * constructs an engine: React hooks can't run outside a render, and the binding's own
+ * import is SSR-safe by construction (it only imports from `react`, itself SSR-safe, plus
+ * types). The Vue case goes one step further and runs `useEkoPlayer`/`useEkoTime` inside a
+ * bare `effectScope()`, because Vue composables need no render at all, and because
+ * `onScopeDispose` is the one thing in the Vue binding worth specifically checking for a
+ * console warning on a server render.
  */
 
 let originalNavigatorDescriptor: PropertyDescriptor | undefined;
@@ -92,5 +104,48 @@ describe("SSR smoke: no DOM present", () => {
     }).not.toThrow();
     expect(typeof detach).toBe("function");
     expect(() => detach?.()).not.toThrow();
+  });
+
+  it("importing the react binding entry resolves and constructing an engine does not throw", async () => {
+    const mod = await import("../src/react/index");
+    expect(mod.useEkoPlayer).toBeDefined();
+    expect(mod.useEkoTime).toBeDefined();
+
+    const core = await import("../src/index");
+    let engine: InstanceType<typeof core.EkoWebEngine> | undefined;
+    expect(() => {
+      engine = new core.EkoWebEngine();
+    }).not.toThrow();
+    expect(engine?.state).toBe("idle");
+  });
+
+  it("importing the vue binding entry resolves, and its composables run inside a bare effectScope with no DOM and print no console warning", async () => {
+    const mod = await import("../src/vue/index");
+    const { effectScope } = await import("vue");
+    const core = await import("../src/index");
+    expect(mod.useEkoPlayer).toBeDefined();
+    expect(mod.useEkoTime).toBeDefined();
+
+    // `onScopeDispose` is safe outside a component but warns in some contexts; a warning on
+    // every server render is its own kind of broken, so this fails the test if Vue emits one.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const engine = new core.EkoWebEngine();
+    const scope = effectScope();
+    let player: ReturnType<typeof mod.useEkoPlayer> | undefined;
+    let time: ReturnType<typeof mod.useEkoTime> | undefined;
+    expect(() => {
+      scope.run(() => {
+        player = mod.useEkoPlayer(engine);
+        time = mod.useEkoTime(engine);
+      });
+    }).not.toThrow();
+
+    expect(player?.value.state).toBe("idle");
+    expect(time?.currentTime.value).toBe(0);
+
+    scope.stop();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
