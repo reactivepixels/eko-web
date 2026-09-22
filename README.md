@@ -5,7 +5,7 @@
 **A web audio engine you build real players with.**
 
 True gapless playback, crossfade, loudness normalization and ReplayGain tags.
-About 12&nbsp;kB, no runtime dependencies, and no framework of its own.
+6.6&nbsp;kB gzipped, no runtime dependencies, and no framework of its own.
 
 [![npm](https://img.shields.io/npm/v/@rpxl/eko-web?color=ef6a1e&labelColor=2c2b27)](https://www.npmjs.com/package/@rpxl/eko-web)
 [![CI](https://img.shields.io/github/actions/workflow/status/reactivepixels/eko-web/ci.yml?branch=main&labelColor=2c2b27)](https://github.com/reactivepixels/eko-web/actions)
