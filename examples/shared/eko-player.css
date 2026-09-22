@@ -88,6 +88,10 @@ body.embed .eko-web {
   height: 64px;
   border-radius: 14px;
   flex: 0 0 auto;
+  /* When a track is loaded, a generated cover is set as a background image on top of the
+     empty slot's own gradient, so the slot reads as a record sleeve rather than a hole. */
+  background-size: cover;
+  background-position: center;
   background: radial-gradient(120% 120% at 25% 20%, var(--light), transparent 60%), var(--art);
   box-shadow: var(--out-sm), var(--bevel);
   background-size: cover;

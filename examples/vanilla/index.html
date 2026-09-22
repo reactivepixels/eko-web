@@ -84,7 +84,7 @@
 
     <div class="eko-web" id="ewPlayer">
       <div class="ew-head">
-        <div class="ew-cover"></div>
+        <div class="ew-cover" id="ewCover"></div>
         <div class="ew-meta">
           <div class="ew-lab">
             NOW PLAYING
@@ -219,21 +219,15 @@
           <b>resampled to your system rate</b>, so this is not bit-perfect and does not pretend to
           be.
         </div>
-        <a class="ew-dl" href="https://github.com/reactivepixels/eko-web"> eko-web on GitHub </a>
+        <a class="ew-dl" href="https://github.com/reactivepixels/eko-web"> EKO Web on GitHub </a>
       </div>
     </div>
 
     <p class="caption">
-      <b>EKO Web, vanilla JS demo</b>: the eko-web engine driven directly, with no framework and no
-      binding layer. There is no re-render to lean on here, so this page subscribes to the engine
-      itself and patches the DOM by hand: <code>engine.subscribe(fn)</code> for discrete state
-      (title, queue position, play/pause, volume) and <code>engine.on("timeupdate", fn)</code> for
-      the clock, which is exactly what <code>useEkoPlayer</code> and <code>useEkoTime</code>
-      do under the hood in the React and Vue demos. Pick a short file, or press
-      <b>Use a test tone</b>. Switch <b>Gapless</b>, <b>Crossfade</b> and <b>Gap</b> to hear the
-      seam change; with a single file the queue holds it twice so there is a real boundary to hear.
-      The <b>GAIN</b> readout says whether the loudness match came from a ReplayGain tag in the file
-      or from the engine measuring the decoded audio itself.
+      <b>EKO Web, vanilla JS.</b> No framework and no binding layer. This page subscribes to the
+      engine and patches the DOM itself, which is exactly what <code>useEkoPlayer</code> and
+      <code>useEkoTime</code> wrap in the other two demos. Switch <b>Gapless</b>,
+      <b>Crossfade</b> and <b>Gap</b> to hear the boundary change.
     </p>
 
     <script>
@@ -261,6 +255,7 @@
       // this demo plays that consumer, exactly like a real app would.
       import { readReplayGain } from "../../dist/replaygain.js";
       import { attachSpectrum } from "../shared/spectrum.js";
+      import { coverFor } from "../shared/cover.js";
 
       const $ = (id) => document.getElementById(id);
 
@@ -332,6 +327,7 @@
         tone: $("ewTone"),
         err: $("ewErr"),
         canvas: $("ewSpec"),
+        cover: $("ewCover"),
         rate: $("ewRate"),
         src: $("ewSrc"),
         queue: $("ewQueue"),
@@ -390,6 +386,14 @@
         els.sub.textContent = snapshot.track
           ? snapshot.track.artist || ""
           : "Choose a file, or use the test tone";
+
+        // Cover art, drawn from the title rather than read from the file: the library
+        // deliberately parses no metadata beyond ReplayGain tags, so there is no artwork to
+        // find. Generating it keeps the slot meaningful and gives every track its own face.
+        const coverTitle = snapshot.track && (snapshot.track.title || snapshot.track.id);
+        els.cover.style.backgroundImage = coverTitle
+          ? `url("${coverFor(coverTitle, { dark: document.documentElement.dataset.theme === "dark" })}")`
+          : "";
 
         els.src.textContent = sourceLabel(snapshot.sourceKind);
         els.queue.textContent = snapshot.track

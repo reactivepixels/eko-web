@@ -124,6 +124,7 @@
       import { readReplayGain } from "../../dist/replaygain.js";
       import { useEkoPlayer, useEkoTime } from "../../dist/vue.js";
       import { attachSpectrum } from "../shared/spectrum.js";
+      import { coverFor } from "../shared/cover.js";
 
       /** mm:ss, clamped to zero for anything not-yet-known (NaN, negative). */
       function formatTime(seconds) {
@@ -464,6 +465,15 @@
             immediate: true,
           });
 
+          // Generated from the title: the library parses no artwork, so drawing it is what
+          // keeps this slot meaningful rather than an empty square.
+          const coverStyle = computed(() => {
+            const track = player.value.track;
+            if (!track) return undefined;
+            const art = coverFor(track.title || track.id, { dark: theme.value === "dark" });
+            return { backgroundImage: `url("${art}")` };
+          });
+
           const sourceLabel = computed(() => {
             const kind = player.value.sourceKind;
             if (kind === "buffer") return "Buffer decode";
@@ -516,6 +526,7 @@
             onFileChange,
             useTestTone,
             errorMessage,
+            coverStyle,
             sourceLabel,
             queueLabel,
             gainLabel,
@@ -536,7 +547,7 @@
           </h1>
           <div class="eko-web" :class="{ playing: player.state === 'playing' }">
             <div class="ew-head">
-              <div class="ew-cover"></div>
+              <div class="ew-cover" :style="coverStyle"></div>
               <div class="ew-meta">
                 <div class="ew-lab">
                   NOW PLAYING
@@ -644,18 +655,14 @@
                 <b>resampled to your system rate</b>, so this is not bit-perfect and does not
                 pretend to be.
               </div>
-              <a class="ew-dl" href="https://github.com/reactivepixels/eko-web"> eko-web on GitHub </a>
+              <a class="ew-dl" href="https://github.com/reactivepixels/eko-web"> EKO Web on GitHub </a>
             </div>
           </div>
 
           <p class="caption">
-            <b>EKO Web, Vue demo</b>: the eko-web engine driven through its Vue 3 binding
-            (<code>useEkoPlayer</code> and <code>useEkoTime</code>). Pick a short file, or press
-            <b>Use a test tone</b>. Switch <b>Gapless</b>, <b>Crossfade</b> and <b>Gap</b> to hear
-            the seam change; with a single file the queue holds it twice so there is a real
-            boundary to hear. The <b>GAIN</b> readout says whether the loudness match came from a
-            ReplayGain tag in the file or from the engine measuring the decoded audio itself.
-          </p>
+      <b>EKO Web, Vue 3.</b> Driven through <code>useEkoPlayer</code> and <code>useEkoTime</code>. Teardown goes through <code>onScopeDispose</code>, so it works outside a component too. Switch <b>Gapless</b>, <b>Crossfade</b>
+      and <b>Gap</b> to hear the boundary change.
+    </p>
         `,
       };
 

@@ -115,6 +115,7 @@
       import { useEkoPlayer, useEkoTime } from "../../dist/react.js";
       import { readReplayGain } from "../../dist/replaygain.js";
       import { attachSpectrum } from "../shared/spectrum.js";
+      import { coverFor } from "../shared/cover.js";
 
       const TRANSITIONS = ["gapless", "crossfade", "gap"];
 
@@ -309,7 +310,16 @@
           h(
             "div",
             { className: "ew-head" },
-            h("div", { className: "ew-cover" }),
+            h("div", {
+              className: "ew-cover",
+              // Generated from the title: the library parses no artwork, so drawing it is
+              // what keeps this slot meaningful rather than an empty square.
+              style: player.track
+                ? {
+                    backgroundImage: `url("${coverFor(player.track.title || player.track.id, { dark: theme === "dark" })}")`,
+                  }
+                : undefined,
+            }),
             h(
               "div",
               { className: "ew-meta" },
@@ -556,7 +566,7 @@
             h(
               "a",
               { className: "ew-dl", href: "https://github.com/reactivepixels/eko-web" },
-              "eko-web on GitHub",
+              "EKO Web on GitHub",
             ),
           ),
         );
