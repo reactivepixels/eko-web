@@ -69,8 +69,7 @@ describe("the documented React pattern", () => {
     }
 
     const { unmount } = render(createElement(Player));
-    const subscribers = () =>
-      (engine as unknown as { subscribers: Set<unknown> }).subscribers.size;
+    const subscribers = () => (engine as unknown as { subscribers: Set<unknown> }).subscribers.size;
     expect(subscribers()).toBe(1);
 
     unmount();
