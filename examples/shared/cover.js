@@ -6,10 +6,10 @@
  * drawing it instead means the same title always produces the same cover, every track
  * looks distinct, and there is nothing to license.
  *
- * One composition, in the spirit of the player it sits in: concentric rings around a
- * point, one warm accent arc, a warm ground. Everything is laid out from that point with
- * the outer radius shrunk to match how far it has drifted, so the rings never clip against
- * an edge and the art still reads at 64px.
+ * One composition, in the spirit of the player it sits in: concentric rings on the exact
+ * centre, one warm accent arc, a warm ground. The rings stay centred because anything else
+ * reads as a layout bug in a small square slot; each track varies in ring count, spacing,
+ * the accent's position and the ground tone instead.
  */
 
 /** A small, stable string hash, so the same title always draws the same cover. */
@@ -71,16 +71,13 @@ export function coverFor(title, opts = {}) {
   const inkTop = dark ? 0.3 : 0.36;
   const lift = dark ? "#4a5260" : "#fdfcf8";
 
-  // Where the rings are centred. The drift is small and the outer radius shrinks to match,
-  // so the outermost ring always lands about 9 units inside the edge.
-  const angle = r() * Math.PI * 2;
-  const distance = r() * 9;
-  const cx = 50 + Math.cos(angle) * distance;
-  const cy = 50 + Math.sin(angle) * distance;
+  const cx = 50;
+  const cy = 50;
 
   const count = 4 + Math.floor(r() * 3); // 4 to 6
   const inner = 8 + r() * 5;
-  const outer = 41 - distance;
+  // The outermost ring sits 9 units inside the edge, the same margin on every side.
+  const outer = 41;
   const step = (outer - inner) / (count - 1);
 
   let motif = `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(inner * 0.5).toFixed(1)}" fill="${ink}" fill-opacity="${dark ? 0.14 : 0.17}"/>`;
