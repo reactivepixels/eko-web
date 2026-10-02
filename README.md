@@ -39,6 +39,24 @@ await engine.play(); // call from a click: browsers require it
 
 ---
 
+EKO Web is the playback engine behind a music player, not the player itself. You give it a
+queue of tracks and it handles what a bare `<audio>` element gets wrong: the silence between
+tracks on a gapless album, the volume jump between a quiet track and a loud one, the click
+on pause, and the lock screen showing the wrong song. It runs on the Web Audio API, has no
+runtime dependencies, and ships optional React and Vue bindings. The UI is yours.
+
+### Why
+
+- **Gapless is sample-accurate.** The next track is scheduled on the audio clock before the
+  current one ends, not started from a `setTimeout`.
+- **Loudness is handled.** ReplayGain tags when the file has them, a measured LUFS gain
+  when it doesn't.
+- **Small and dependency-free.** About 6.6 kB gzipped for the core. Tag reading, Media
+  Session and the framework bindings are separate entry points you only pay for if you
+  import them.
+- **Framework-independent.** One engine, with thin React hooks and Vue composables over the
+  same `subscribe` and `getSnapshot` contract.
+
 It's the web-grade sibling of the native [EKO][eko] player. EKO on the desktop is
 bit-perfect; **EKO Web is not, and doesn't pretend to be**. See the scope below.
 
@@ -287,7 +305,8 @@ see the docs.)
 
 ## Status
 
-**v0.1, feature-complete engine, not yet published to npm.** Done: the engine (buffer
+**v0.1, feature-complete engine, published to npm as
+[`@rpxl/eko-web`](https://www.npmjs.com/package/@rpxl/eko-web).** Done: the engine (buffer
 playback with true gapless queueing, crossfade, a streaming fallback for long files,
 loudness normalization from a tag or measured, click-free play/pause/seek), the queue
 (shuffle, repeat, history), the `replaygain` and `media-session` subpaths, React and Vue
@@ -295,7 +314,7 @@ bindings, coded errors
 you can branch on, the `EkoAudioElement` facade (`@rpxl/eko-web/element`), and the
 ear-test player in `examples/player/`. See
 [`examples/README.md`](./examples/README.md); it needs a build first, it is not a no-build
-page. 417 unit tests, dual ESM/CJS build with types.
+page. 435 unit tests, dual ESM/CJS build with types.
 
 Not yet: a WebCodecs source strategy.
 

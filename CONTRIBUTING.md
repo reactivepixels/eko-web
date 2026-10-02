@@ -25,7 +25,7 @@ there.
 ```bash
 git clone https://github.com/reactivepixels/eko-web.git && cd eko-web
 pnpm install          # pnpm, not npm: npm fails on this repo's lockfile layout
-pnpm test             # 422 tests, all in Node with hand-written Web Audio mocks
+pnpm test             # all in Node with hand-written Web Audio mocks
 pnpm build
 ```
 
