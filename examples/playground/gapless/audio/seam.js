@@ -1,6 +1,7 @@
 /**
- * Measuring a seam in captured output. The material never goes quiet on its own, so any run
- * of near-zero samples after the music starts is time the player spent between files.
+ * Measuring a seam in captured output. Near the seam the built-in material never goes quiet
+ * on its own, so a run of near-zero samples there is time the player spent between files.
+ * For your own album, any silence the music already has at the seam is subtracted.
  */
 
 /** Below this a sample counts as silence (about -80 dBFS). */
@@ -21,17 +22,18 @@ export function contentEnd(samples) {
 }
 
 /**
- * The longest run of silence strictly inside the music (leading and trailing silence are the
- * capture's, not the seam's). Returns { start, length } in samples, length 0 if none.
+ * The longest run of silence inside [from, to) (default: strictly inside the music, since
+ * leading and trailing silence are the capture's, not the seam's). Returns { start, length }
+ * in samples, length 0 if none.
  */
-export function findGap(samples) {
-  const from = contentStart(samples);
-  const to = contentEnd(samples);
+export function findGap(samples, from = contentStart(samples), to = contentEnd(samples)) {
   let best = { start: -1, length: 0 };
   if (from < 0) return best;
   let runStart = -1;
-  for (let i = from; i < to; i++) {
-    if (Math.abs(samples[i]) <= SILENCE) {
+  const end = Math.min(to, samples.length);
+  for (let i = Math.max(0, from); i <= end; i++) {
+    const quiet = i < end && Math.abs(samples[i]) <= SILENCE;
+    if (quiet) {
       if (runStart < 0) runStart = i;
     } else if (runStart >= 0) {
       const length = i - runStart;
@@ -42,15 +44,37 @@ export function findGap(samples) {
   return best;
 }
 
+/** How far either side of the expected seam to look for the player's gap, in seconds. */
+export const SEARCH = 0.25;
+
 /**
- * Where the seam sits in a capture and how wide it is. With a gap, it is the gap. Without
- * one, it is where the second file began: `half` seconds after the music started.
+ * Where the seam sits in a capture and how much silence the player added there.
+ *
+ * Only a window around the expected seam is searched (`half` seconds after the music
+ * starts), so a quiet passage elsewhere can never pass for a gap. `sourceGap` is silence the
+ * music itself already has at that spot (a fade-out on your own album, say), in samples at
+ * the capture's rate; only silence beyond it counts against the player.
+ *
+ * `leadIn` is silence at the very start of the music, in seconds: the capture's first sound
+ * comes that much later than the clip's start, so the seam does too.
+ *
+ * `valid` is false when the capture does not look like the round at all (nothing recorded,
+ * or far too short), so the page can say "?" instead of a confident, wrong 0.
  */
-export function measureSeam(samples, rate, half) {
-  const gap = findGap(samples);
-  if (gap.length > 0) return { at: gap.start, samples: gap.length, ms: (gap.length / rate) * 1000 };
+export function measureSeam(samples, rate, half, sourceGap = 0, leadIn = 0) {
   const start = contentStart(samples);
-  return { at: start < 0 ? -1 : start + Math.round(half * rate), samples: 0, ms: 0 };
+  const end = contentEnd(samples);
+  if (start < 0 || end - start < half * rate * 1.5) {
+    return { at: -1, samples: 0, ms: 0, valid: false };
+  }
+  const expected = start + Math.round((half - leadIn) * rate);
+  const reach = Math.round(SEARCH * rate);
+  const gap = findGap(samples, expected - reach, expected + reach + sourceGap);
+  const added = Math.max(0, gap.length - sourceGap);
+  if (gap.length > 0 && added >= MIN_GAP) {
+    return { at: gap.start, samples: added, ms: (added / rate) * 1000, valid: true };
+  }
+  return { at: gap.length > 0 ? gap.start : expected, samples: 0, ms: 0, valid: true };
 }
 
 /** Peak magnitude per column over a window, for the dot-matrix lanes. */

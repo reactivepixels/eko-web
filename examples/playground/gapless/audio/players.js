@@ -10,20 +10,21 @@
  * cannot be told apart by level.
  */
 
-function ready(el) {
+/** Enough buffered to play. Gives up after `ms` instead of waiting forever (iOS may not preload). */
+function ready(el, ms = 6000) {
   return new Promise((resolve, reject) => {
-    if (el.readyState >= 4) return resolve();
-    const ok = () => {
-      el.removeEventListener("canplaythrough", ok);
+    if (el.readyState >= 3) return resolve();
+    let timer = 0;
+    const done = (fn, arg) => {
+      clearTimeout(timer);
+      el.removeEventListener("canplay", ok);
       el.removeEventListener("error", bad);
-      resolve();
+      fn(arg);
     };
-    const bad = () => {
-      el.removeEventListener("canplaythrough", ok);
-      el.removeEventListener("error", bad);
-      reject(el.error || new Error("load"));
-    };
-    el.addEventListener("canplaythrough", ok);
+    const ok = () => done(resolve);
+    const bad = () => done(reject, el.error || new Error("load"));
+    timer = setTimeout(() => done(reject, new Error("timeout")), ms);
+    el.addEventListener("canplay", ok);
     el.addEventListener("error", bad);
     el.load();
   });
@@ -36,7 +37,7 @@ export function createTagPlayer(ctx, out) {
     ctx.createMediaElementSource(el).connect(out);
   }
   let token = 0;
-  let onDone = null;
+  let unlocked = false;
 
   function stop() {
     token += 1;
@@ -44,27 +45,54 @@ export function createTagPlayer(ctx, out) {
       el.onended = null;
       el.pause();
     }
-    onDone = null;
   }
 
   return {
-    async play(urls, done) {
+    /**
+     * Call inside the click, before any await. WebKit only lets an element start later
+     * (the second file, on the first one's `ended`) if it has played from a gesture once.
+     */
+    unlock(urls) {
+      if (unlocked) return;
+      unlocked = true;
+      els.forEach((el, i) => {
+        if (urls) el.src = urls[i];
+      });
+      for (const el of els) {
+        el.muted = true;
+        el.play()
+          .catch(() => {})
+          .finally(() => {
+            el.pause();
+            el.muted = false;
+          });
+      }
+    },
+    /**
+     * Play the pair. `done` fires when the second file ends; `fail` if either will not load
+     * or play. Neither fires after stop().
+     */
+    async play(urls, done, fail) {
       stop();
       const mine = token;
-      onDone = done;
-      els.forEach((el, i) => {
-        el.src = urls[i];
-        el.currentTime = 0;
-      });
-      await Promise.all(els.map(ready));
-      if (mine !== token) return;
-      els[0].onended = () => {
-        if (mine === token) els[1].play();
-      };
-      els[1].onended = () => {
-        if (mine === token) onDone?.();
-      };
-      await els[0].play();
+      try {
+        els.forEach((el, i) => {
+          el.src = urls[i];
+        });
+        await Promise.all(els.map((el) => ready(el)));
+        if (mine !== token) return;
+        els.forEach((el) => (el.currentTime = 0));
+        els[0].onended = () => {
+          if (mine !== token) return;
+          els[1].play().catch((err) => mine === token && fail(err));
+        };
+        els[1].onended = () => {
+          if (mine === token) done();
+        };
+        await els[0].play();
+      } catch (err) {
+        if (mine === token) fail(err);
+      }
     },
     stop,
     /** Seconds into the pair. */
@@ -79,21 +107,37 @@ export function createTagPlayer(ctx, out) {
 export function createEkoPlayer(engine) {
   let token = 0;
   let onDone = null;
+  let onFail = null;
   engine.on("ended", () => {
     const done = onDone;
-    onDone = null;
+    onDone = onFail = null;
     done?.();
   });
+  // Load and decode failures arrive as events, not as a rejected play(). A failed prefetch
+  // still plays (with a gap), so only a hard failure ends the audition.
+  engine.on("error", ({ error }) => {
+    if (error.code === "prefetch_failed") return;
+    const fail = onFail;
+    onDone = onFail = null;
+    fail?.(error);
+  });
   return {
-    async play(urls, done) {
+    async play(urls, done, fail) {
       token += 1;
       onDone = done;
+      onFail = fail;
       engine.setQueue(urls.map((src, i) => ({ id: `half-${token}-${i}`, src })));
-      await engine.play();
+      try {
+        await engine.play();
+      } catch (err) {
+        const f = onFail;
+        onDone = onFail = null;
+        f?.(err);
+      }
     },
     stop() {
       token += 1;
-      onDone = null;
+      onDone = onFail = null;
       engine.pause();
     },
     position(half) {

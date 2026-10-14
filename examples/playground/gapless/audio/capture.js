@@ -1,41 +1,18 @@
 /**
- * Records exactly what a player sends out, sample by sample, with an AudioWorklet. The
- * reveal measures the seam from this capture: the gap you see is the gap that played.
+ * Records exactly what a player sends out, sample by sample, with an AudioWorklet
+ * (capture-worklet.js). The reveal measures the seam from this capture: the gap you see is
+ * the gap that played.
  */
-
-const WORKLET = `
-class Capture extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.on = false;
-    this.port.onmessage = (e) => { this.on = e.data === "start"; if (!this.on) this.port.postMessage("done"); };
-  }
-  process(inputs) {
-    const input = inputs[0];
-    if (this.on && input.length) {
-      const n = input[0].length;
-      const mono = new Float32Array(n);
-      for (const ch of input) for (let i = 0; i < n; i++) mono[i] += ch[i] / input.length;
-      this.port.postMessage(mono, [mono.buffer]);
-    } else if (this.on) {
-      // No input connected this quantum: the player is silent.
-      this.port.postMessage(new Float32Array(128));
-    }
-    return true;
-  }
-}
-registerProcessor("eko-capture", Capture);
-`;
 
 const loaded = new WeakMap();
 
-async function ensureModule(ctx) {
+/** The processor is a real file next to this one, so no blob: URL or CSP exception is needed. */
+function ensureModule(ctx) {
   if (!loaded.has(ctx)) {
-    const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
-    loaded.set(
-      ctx,
-      ctx.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url)),
-    );
+    const p = ctx.audioWorklet.addModule(new URL("./capture-worklet.js", import.meta.url));
+    // A failed load must not stick: let the next press try again.
+    p.catch(() => loaded.delete(ctx));
+    loaded.set(ctx, p);
   }
   return loaded.get(ctx);
 }
@@ -58,7 +35,9 @@ export async function createCapture(ctx) {
   sink.connect(ctx.destination);
 
   let chunks = [];
-  let finish = null;
+  // Every stop() gets an answer, in order, even if a second one arrives before the first
+  // "done" comes back from the audio thread.
+  const waiting = [];
   node.port.onmessage = (e) => {
     if (e.data === "done") {
       const total = chunks.reduce((n, c) => n + c.length, 0);
@@ -69,8 +48,7 @@ export async function createCapture(ctx) {
         o += c.length;
       }
       chunks = [];
-      finish?.(out);
-      finish = null;
+      waiting.shift()?.(out);
     } else {
       chunks.push(e.data);
     }
@@ -84,7 +62,7 @@ export async function createCapture(ctx) {
     },
     stop() {
       return new Promise((resolve) => {
-        finish = resolve;
+        waiting.push(resolve);
         node.port.postMessage("stop");
       });
     },
