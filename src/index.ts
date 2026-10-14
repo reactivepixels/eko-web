@@ -6,6 +6,7 @@ export type {
   EkoEventName,
   EkoEventListener,
   TransitionKind,
+  EkoInsert,
 } from "./types";
 
 export type { EkoSnapshot } from "./engine/snapshot";

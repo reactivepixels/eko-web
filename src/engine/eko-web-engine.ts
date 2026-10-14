@@ -15,6 +15,7 @@ import type {
   EkoEventListener,
   TransitionKind,
   NormalizeMode,
+  EkoInsert,
 } from "../types";
 
 /**
@@ -744,9 +745,10 @@ export class EkoWebEngine {
 
   /**
    * Insert your own nodes (an EQ, a compressor) after normalization and before the fader.
-   * Pass an empty array to remove them. Inserts survive track changes.
+   * Pass an empty array to remove them. Inserts survive track changes. A stage can be a
+   * plain node or a composite `{ input, output }` sub-graph, whose inner wiring is left alone.
    */
-  setInserts(nodes: AudioNode[]): void {
+  setInserts(nodes: EkoInsert[]): void {
     this.assertNotDestroyed();
     this.ensureGraph();
     this.graph!.setInserts(nodes);

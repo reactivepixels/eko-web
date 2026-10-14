@@ -93,4 +93,42 @@ describe("EkoGraph", () => {
 
     expect(source.connections).toEqual([graph.input]);
   });
+
+  it("wires a composite insert through its input and output, leaving its insides alone", () => {
+    const { graph } = setup();
+    const input = new MockGainNode();
+    const inner = new MockGainNode();
+    const output = new MockGainNode();
+    input.connect(inner);
+    inner.connect(output);
+    const after = new MockGainNode();
+
+    graph.setInserts([
+      { input: input as unknown as AudioNode, output: output as unknown as AudioNode },
+      after as unknown as AudioNode,
+    ]);
+    void graph.analyser;
+
+    expect(asMock(graph.input).connections).toEqual([input]);
+    expect(input.connections).toEqual([inner]);
+    expect(inner.connections).toEqual([output]);
+    expect(output.connections).toEqual([after]);
+    expect(after.connections).toEqual([graph.fadeGain]);
+  });
+
+  it("disconnects only a composite's output when inserts are cleared", () => {
+    const { graph } = setup();
+    const input = new MockGainNode();
+    const output = new MockGainNode();
+    input.connect(output);
+
+    graph.setInserts([
+      { input: input as unknown as AudioNode, output: output as unknown as AudioNode },
+    ]);
+    graph.setInserts([]);
+
+    expect(input.connections).toEqual([output]);
+    expect(output.connections).toEqual([]);
+    expect(asMock(graph.input).connections).toEqual([graph.fadeGain]);
+  });
 });
