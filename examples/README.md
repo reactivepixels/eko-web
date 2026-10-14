@@ -30,6 +30,30 @@ can watch shuffle reordering happen. The **shelf** checkbox proves the user inse
 by putting a real biquad into the chain, and the spectrum is drawn from the engine's
 analyser tap.
 
+## Playground (`playground/`)
+
+Players you remember, rebuilt on the real engine. `playground/index.html` is the gallery;
+each player is a self-contained page beside it that imports `../../../dist/index.js` and
+nothing else. Same setup as the player above:
+
+```bash
+npm run harness
+# then open http://localhost:4321/examples/playground/
+```
+
+**EKO-AMP (`playground/winamp/`)** is a Winamp 2.x clone. The skin is painted in code into
+sprite sheets laid out like Winamp's own skin bitmaps, and each window draws from them onto
+a 1x canvas that is scaled up with whole pixels, so it stays crisp at any zoom. Drop audio
+files anywhere (or press ADD), and the playlist plays gapless. The 10-band EQ, preamp and
+balance are real Web Audio nodes in the engine's insert chain, and the spectrum and
+oscilloscope read the engine's analyser. Press Play with nothing loaded and it queues a
+generated loop three times, so the first thing you hear is three tracks joining with no
+seam. Drag a titlebar to move a window; drag the main window to carry everything docked to
+it. Z, X, C, V and B are prev, play, pause, stop and next, as they were.
+
+The pure parts (layout maths, the EQ chain, spectrum mapping, file handling) have unit
+tests next to them as `*.test.js`, which `pnpm test` picks up.
+
 ## Vanilla demo (`index.html`), superseded by `player/`
 
 An older, minimal page for ear-testing gapless and normalization with your own files. Kept

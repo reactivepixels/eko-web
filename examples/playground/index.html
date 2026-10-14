@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EKO Playground</title>
+    <meta
+      name="description"
+      content="Audio players you remember, rebuilt on the EKO Web engine. Every one runs the real thing."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Doto:wght@400..900&family=Geist+Mono:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./shared/playground.css" />
+    <style>
+      :root {
+        --bg: #e9e7e0;
+        --light: #ffffff;
+        --dark: #c3c1b8;
+        --ink: #2c2b27;
+        --ink-2: #6f6e67;
+        --ink-3: #9b9a92;
+        --accent: #ef6a1e;
+        --out: 6px 6px 14px var(--dark), -6px -6px 14px var(--light);
+        --out-sm: 3px 3px 7px var(--dark), -3px -3px 7px var(--light);
+        --in: inset 5px 5px 12px var(--dark), inset -5px -5px 12px var(--light);
+        --in-sm: inset 2px 2px 5px var(--dark), inset -2px -2px 5px var(--light);
+        --serif: "Instrument Serif", Georgia, serif;
+        --sans: "Archivo", "Helvetica Neue", Helvetica, sans-serif;
+        --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+        --dot: "Doto", "Geist Mono", monospace;
+        --ease: cubic-bezier(0.34, 0.01, 0.2, 1);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.55 var(--sans);
+        -webkit-font-smoothing: antialiased;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+      .wrap {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 40px 36px 72px;
+      }
+      .kicker {
+        font: 500 11px/1 var(--mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ink-2);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .led {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow:
+          0 0 0 2px rgba(239, 106, 30, 0.15),
+          0 0 8px var(--accent);
+      }
+      .mast {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 40px;
+        align-items: end;
+        padding-bottom: 28px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      h1 {
+        font: 400 clamp(48px, 7vw, 84px) / 0.92 var(--serif);
+        letter-spacing: -0.015em;
+        margin: 16px 0 0;
+      }
+      h1 em {
+        color: var(--accent);
+      }
+      .intro {
+        margin: 0;
+        color: var(--ink-2);
+        font-size: 15px;
+      }
+      .intro b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 32px 28px;
+        margin-top: 36px;
+        padding: 0;
+        list-style: none;
+      }
+      .card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        color: inherit;
+        text-decoration: none;
+      }
+      .bay {
+        border-radius: 22px;
+        padding: 12px;
+        box-shadow: var(--in);
+        transition: box-shadow 0.3s var(--ease);
+      }
+      .shot {
+        position: relative;
+        border-radius: 13px;
+        overflow: hidden;
+        aspect-ratio: 760 / 560;
+        background: #1b1b1f;
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.7),
+          0 0 0 1px rgba(0, 0, 0, 0.08);
+      }
+      .shot img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition:
+          transform 0.6s var(--ease),
+          filter 0.4s var(--ease);
+      }
+      .card.next .shot img {
+        filter: saturate(0.55) brightness(0.92);
+      }
+      .card.live:hover .shot img,
+      .card.live:focus-visible .shot img {
+        transform: scale(1.025);
+      }
+      .card.live:focus-visible {
+        outline: none;
+      }
+      .card.live:focus-visible .bay {
+        box-shadow:
+          var(--in),
+          0 0 0 3px var(--accent);
+      }
+      .meta {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 4px 14px;
+        align-items: baseline;
+        padding: 0 6px;
+      }
+      .num {
+        font: 800 26px/1 var(--dot);
+        color: var(--ink-3);
+        grid-row: span 2;
+        align-self: start;
+        padding-top: 4px;
+      }
+      .live .num {
+        color: var(--accent);
+      }
+      .name {
+        font: 400 29px/1.05 var(--serif);
+        margin: 0;
+      }
+      .tag {
+        grid-column: 2 / 4;
+        margin: 0;
+        color: var(--ink-2);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .chip {
+        font: 600 10.5px/1 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 8px 11px;
+        border-radius: 9px;
+        white-space: nowrap;
+      }
+      .live .chip {
+        background: linear-gradient(#f47a33, #e2601a);
+        color: #fff8f2;
+        box-shadow:
+          var(--out-sm),
+          inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+      .next .chip {
+        color: var(--ink-3);
+        box-shadow: var(--in-sm);
+      }
+      .foot {
+        margin-top: 56px;
+        padding-top: 24px;
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 28px;
+        color: var(--ink-2);
+        font-size: 13.5px;
+      }
+      .foot h2 {
+        font: 500 10.5px/1 var(--mono);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin: 0 0 10px;
+      }
+      .foot p {
+        margin: 0;
+      }
+      .foot code {
+        font: 500 12px var(--mono);
+        color: var(--ink);
+        background: rgba(0, 0, 0, 0.05);
+        padding: 1px 6px;
+        border-radius: 5px;
+      }
+      .foot a {
+        color: var(--ink);
+      }
+      @media (max-width: 1080px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .mast {
+          grid-template-columns: 1fr;
+          gap: 18px;
+        }
+      }
+      @media (max-width: 680px) {
+        .wrap {
+          padding: 28px 16px 56px;
+        }
+        .grid,
+        .foot {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="mast">
+        <div>
+          <div class="kicker"><span class="led"></span>EKO Web &nbsp;/&nbsp; Playground</div>
+          <h1>Players you remember, <em>running a real engine.</em></h1>
+        </div>
+        <p class="intro">
+          Each one is a full player built on <b>@rpxl/eko-web</b>: gapless playlists, loudness
+          normalization and a live analyser, under a skin you'll recognise. Drop in your own files
+          and listen to the seams.
+        </p>
+      </header>
+
+      <ol class="grid">
+        <li>
+          <a class="card live" href="./winamp/">
+            <div class="bay">
+              <div class="shot">
+                <img src="./shared/cards/winamp.png" alt="EKO-AMP, a Winamp 2.x clone, playing" />
+              </div>
+            </div>
+            <div class="meta">
+              <span class="num">01</span>
+              <h3 class="name">EKO-AMP</h3>
+              <span class="chip">Open</span>
+              <p class="tag">
+                Winamp 2.x, pixel for pixel. Drag the windows, ride the 10-band EQ, drop in an
+                album.
+              </p>
+            </div>
+          </a>
+        </li>
+        <li>
+          <div class="card next">
+            <div class="bay">
+              <div class="shot">
+                <img src="./shared/cards/ipod.jpg" alt="Concept: an iPod Classic style player" />
+              </div>
+            </div>
+            <div class="meta">
+              <span class="num">02</span>
+              <h3 class="name">iPod Classic</h3>
+              <span class="chip">Next up</span>
+              <p class="tag">A click wheel you actually spin to scrub and set the volume.</p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="card next">
+            <div class="bay">
+              <div class="shot">
+                <img src="./shared/cards/hifi.jpg" alt="Concept: a 1978 hi-fi separates stack" />
+              </div>
+            </div>
+            <div class="meta">
+              <span class="num">03</span>
+              <h3 class="name">Hi-fi separates</h3>
+              <span class="chip">Soon</span>
+              <p class="tag">Amber VU needles and a graphic EQ where every fader is real.</p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="card next">
+            <div class="bay">
+              <div class="shot">
+                <img src="./shared/cards/gapless.jpg" alt="Concept: the gapless blind test" />
+              </div>
+            </div>
+            <div class="meta">
+              <span class="num">04</span>
+              <h3 class="name">Gapless blind test</h3>
+              <span class="chip">Soon</span>
+              <p class="tag">A live album, played two ways. Guess which one was EKO.</p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="card next">
+            <div class="bay">
+              <div class="shot">
+                <img src="./shared/cards/milkdrop.jpg" alt="Concept: a MilkDrop style visualiser" />
+              </div>
+            </div>
+            <div class="meta">
+              <span class="num">05</span>
+              <h3 class="name">Visualiser</h3>
+              <span class="chip">Soon</span>
+              <p class="tag">Feedback visuals that breathe with the analyser.</p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="card next">
+            <div class="bay">
+              <div class="shot">
+                <img src="./shared/cards/xp.jpg" alt="Concept: a Windows XP style mini player" />
+              </div>
+            </div>
+            <div class="meta">
+              <span class="num">06</span>
+              <h3 class="name">XP mini player</h3>
+              <span class="chip">Soon</span>
+              <p class="tag">A Luna-blue window, a tray balloon and the real OS media keys.</p>
+            </div>
+          </div>
+        </li>
+      </ol>
+
+      <footer class="foot">
+        <div>
+          <h2>What this is</h2>
+          <p>
+            Toys with a point: every player here drives the same engine you install, with no mocks
+            underneath. The skins change; the playback doesn't.
+          </p>
+        </div>
+        <div>
+          <h2>Run it</h2>
+          <p>
+            From the repo root, <code>npm run harness</code>, then open
+            <code>/examples/playground/</code>. Players import the built <code>dist/</code>.
+          </p>
+        </div>
+        <div>
+          <h2>More</h2>
+          <p>
+            The plain reference player is in <a href="../player/">examples/player</a>, and the
+            framework bindings in <a href="../react/">react</a> and <a href="../vue/">vue</a>.
+          </p>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
