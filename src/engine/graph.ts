@@ -10,6 +10,11 @@
  * The chain is stable across a gapless promotion: sources connect into `input` and are
  * replaced freely, while everything downstream is untouched.
  */
+import type { EkoInsert } from "../types";
+
+const inputOf = (insert: EkoInsert): AudioNode => ("input" in insert ? insert.input : insert);
+const outputOf = (insert: EkoInsert): AudioNode => ("output" in insert ? insert.output : insert);
+
 export class EkoGraph {
   readonly context: AudioContext;
   /**
@@ -24,7 +29,7 @@ export class EkoGraph {
   readonly userGain: GainNode;
 
   private _analyser: AnalyserNode | null = null;
-  private inserts: AudioNode[] = [];
+  private inserts: EkoInsert[] = [];
 
   constructor(context: AudioContext) {
     this.context = context;
@@ -49,10 +54,11 @@ export class EkoGraph {
 
   /**
    * Replace the user insert chain (an EQ, a compressor, a convolver). Pass an empty array
-   * to restore the direct connection. Inserts survive track changes.
+   * to restore the direct connection. Inserts survive track changes. A composite
+   * `{ input, output }` stage keeps its internal wiring: only `output` is disconnected.
    */
-  setInserts(nodes: AudioNode[]): void {
-    for (const node of this.inserts) node.disconnect();
+  setInserts(nodes: EkoInsert[]): void {
+    for (const insert of this.inserts) outputOf(insert).disconnect();
     this.inserts = [...nodes];
     this.connectChain();
   }
@@ -67,9 +73,9 @@ export class EkoGraph {
   private disconnectAll(): void {
     this.input.disconnect();
     // Called from setInserts() too, after this.inserts has already been reassigned to the
-    // new array, so this pass is a no-op there: the new nodes have no outgoing connections
-    // yet. It only does real work on the destroy() path, for the previous insert chain.
-    for (const node of this.inserts) node.disconnect();
+    // new array. There it clears whatever leaves each new stage's output, which the engine
+    // owns (see EkoInsert); a composite's inner wiring is never touched.
+    for (const insert of this.inserts) outputOf(insert).disconnect();
     this.fadeGain.disconnect();
     this.userGain.disconnect();
     this._analyser?.disconnect();
@@ -81,8 +87,8 @@ export class EkoGraph {
 
     let node: AudioNode = this.input;
     for (const insert of this.inserts) {
-      node.connect(insert);
-      node = insert;
+      node.connect(inputOf(insert));
+      node = outputOf(insert);
     }
     node.connect(this.fadeGain);
     this.fadeGain.connect(this.userGain);

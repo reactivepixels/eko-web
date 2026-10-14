@@ -34,6 +34,16 @@ export interface EkoTrack {
   source?: "buffer" | "element";
 }
 
+/**
+ * One stage in the insert chain passed to `setInserts()`. A plain node is wired in and out
+ * by the engine. A composite `{ input, output }` lets a stage be a whole sub-graph (parallel
+ * paths, a feedback loop): the engine connects into `input` and out of `output`, and leaves
+ * every connection inside it alone. The engine owns `output`'s outgoing connections and
+ * clears them whenever it rewires, so nothing of yours may start at `output`: close a
+ * feedback loop, or tap a meter, from a node inside the stage instead.
+ */
+export type EkoInsert = AudioNode | { input: AudioNode; output: AudioNode };
+
 /** High-level engine state. */
 export type EkoState = "idle" | "loading" | "ready" | "playing" | "paused" | "ended" | "error";
 
