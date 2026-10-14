@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EKO hi-fi 1978</title>
+    <meta
+      name="description"
+      content="A 1978 component stack running on the EKO Web engine: cassette deck, graphic EQ and integrated amp, every control live."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Caveat:wght@500;600&family=Geist+Mono:wght@400..600&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../shared/playground.css" />
+    <link rel="stylesheet" href="./hifi.css" />
+  </head>
+  <body>
+    <main class="room">
+      <h1 class="headline">EKO <i>hi-fi</i> 1978</h1>
+
+      <div class="scene">
+        <div class="scroller">
+          <div class="stage" id="stage">
+            <div class="stack" id="stack">
+              <div class="cover">
+                <div class="vent" style="left: 70px"></div>
+                <div class="vent" style="left: 150px"></div>
+                <div class="vent" style="left: 230px"></div>
+                <div class="vent" style="left: 300px"></div>
+                <div class="vent" style="left: 380px"></div>
+                <div class="vent" style="left: 460px"></div>
+              </div>
+
+              <!-- ============ CASSETTE DECK ============ -->
+              <section class="unit deck" aria-label="D-55 stereo cassette deck">
+                <div class="screw" style="left: 8px; top: 8px; --s: 20deg"></div>
+                <div class="screw" style="left: 8px; bottom: 8px; --s: -40deg"></div>
+                <div class="screw" style="right: 8px; top: 8px; --s: 60deg"></div>
+                <div class="screw" style="right: 8px; bottom: 8px; --s: 5deg"></div>
+
+                <div class="brand" style="left: 26px; top: 18px; font-size: 17px">EKO</div>
+                <div
+                  class="model"
+                  style="
+                    left: 26px;
+                    top: 39px;
+                    font-size: 6px;
+                    line-height: 1.35;
+                    letter-spacing: 0.9px;
+                  "
+                >
+                  Stereo Cassette<br />Deck
+                </div>
+                <div class="model" style="left: 26px; top: 58px"><b>D-55</b></div>
+                <div class="lg dim" style="left: 26px; top: 70px; font-size: 5px">Dolby B NR</div>
+
+                <div class="counter" aria-hidden="true">
+                  <div class="drum"><div class="reel" data-drum="0"></div></div>
+                  <div class="drum"><div class="reel" data-drum="1"></div></div>
+                  <div class="drum"><div class="reel" data-drum="2"></div></div>
+                </div>
+                <button
+                  class="push small"
+                  id="counterReset"
+                  style="left: 76px; top: 92px; width: 14px; height: 9px"
+                ></button>
+                <div class="lg dim" style="left: 26px; top: 110px; font-size: 5px">Counter</div>
+                <div class="lg c dim" style="left: 83px; top: 110px; font-size: 5px">Reset</div>
+
+                <div class="bay" id="bay">
+                  <div class="well"></div>
+                  <div class="cassette" id="cassette"></div>
+                  <div class="door"><div class="door-glass"></div></div>
+                  <div class="bay-empty lg c dim" style="left: 96px; top: 54px">
+                    Push Eject to load
+                  </div>
+                </div>
+
+                <div class="lcdwin deckmeter">
+                  <canvas id="deckMeter" width="336" height="60"></canvas>
+                  <div class="glass"></div>
+                </div>
+                <div class="lg dim" style="left: 314px; top: 49px; font-size: 5px">Peak Level</div>
+                <div
+                  class="lg dim"
+                  style="left: 482px; top: 49px; font-size: 5px; transform: translateX(-100%)"
+                >
+                  dB
+                </div>
+
+                <button
+                  class="push"
+                  id="dolby"
+                  style="left: 496px; top: 15px; width: 22px; height: 12px"
+                ></button>
+                <div class="led" style="left: 527px; top: 21px" data-led="dolby"></div>
+                <div class="lg" style="left: 496px; top: 32px; font-size: 5.5px">Dolby NR</div>
+
+                <svg
+                  class="ticks"
+                  style="left: 555px; top: 30px"
+                  width="38"
+                  height="38"
+                  data-ticks="3"
+                  data-span="45"
+                ></svg>
+                <div
+                  class="knob black"
+                  id="tapeType"
+                  style="left: 555px; top: 30px; width: 18px; height: 18px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 555px; top: 45px; font-size: 5.5px">Tape</div>
+                <div class="lg c dim" style="left: 541px; top: 15px; font-size: 4.2px">Nor</div>
+                <div
+                  class="lg c dim"
+                  style="left: 555px; top: 9.5px; font-size: 4.2px; text-transform: none"
+                >
+                  CrO2
+                </div>
+                <div class="lg c dim" style="left: 569px; top: 15px; font-size: 4.2px">Met</div>
+
+                <div class="led red" style="left: 330px; top: 58px" data-led="rec"></div>
+                <div class="keys" role="group" aria-label="Transport">
+                  <button class="key" data-key="rec" aria-label="Record">
+                    <span class="sym rec"></span>
+                  </button>
+                  <button
+                    class="key"
+                    data-key="rew"
+                    aria-label="Rewind (click for previous track, hold to review)"
+                  >
+                    <svg class="sym" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+                      <path d="M6 0v8L0 4zM12 0v8L6 4z" />
+                    </svg>
+                  </button>
+                  <button
+                    class="key"
+                    data-key="ff"
+                    aria-label="Fast forward (click for next track, hold to cue)"
+                  >
+                    <svg class="sym" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+                      <path d="M0 0v8l6-4zM6 0v8l6-4z" />
+                    </svg>
+                  </button>
+                  <button class="key" data-key="play" aria-label="Play">
+                    <svg class="sym" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+                      <path d="M3 0v8l7-4z" />
+                    </svg>
+                  </button>
+                  <button class="key" data-key="stop" aria-label="Stop">
+                    <svg class="sym" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+                      <rect x="2.5" y="0.5" width="7" height="7" />
+                    </svg>
+                  </button>
+                  <button class="key" data-key="pause" aria-label="Pause">
+                    <svg class="sym" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+                      <rect x="2.5" y="0.5" width="2.6" height="7" />
+                      <rect x="6.9" y="0.5" width="2.6" height="7" />
+                    </svg>
+                  </button>
+                  <button class="key" data-key="eject" aria-label="Eject and load files">
+                    <svg class="sym" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true">
+                      <path d="M6 0l5 5H1z" />
+                      <rect x="1" y="6" width="10" height="2" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="keylabels" aria-hidden="true">
+                  <span>Rec</span><span>Rew</span><span>FF</span><span>Play</span><span>Stop</span
+                  ><span>Pause</span><span>Eject</span>
+                </div>
+              </section>
+
+              <div class="gap" style="top: 150px"></div>
+
+              <!-- ============ GRAPHIC EQUALIZER ============ -->
+              <section class="unit eq" aria-label="G-110 stereo graphic equalizer">
+                <div class="screw" style="left: 8px; top: 8px; --s: 40deg"></div>
+                <div class="screw" style="left: 8px; bottom: 8px; --s: -20deg"></div>
+                <div class="screw" style="right: 8px; top: 8px; --s: 75deg"></div>
+                <div class="screw" style="right: 8px; bottom: 8px; --s: 10deg"></div>
+
+                <div class="brand" style="left: 26px; top: 20px; font-size: 17px">EKO</div>
+                <div
+                  class="model"
+                  style="
+                    left: 26px;
+                    top: 41px;
+                    font-size: 6px;
+                    line-height: 1.35;
+                    letter-spacing: 0.9px;
+                  "
+                >
+                  Stereo Graphic<br />Equalizer
+                </div>
+                <div class="model" style="left: 26px; top: 60px"><b>G-110</b></div>
+
+                <button
+                  class="push"
+                  id="eqPower"
+                  style="left: 28px; top: 82px; width: 24px; height: 14px"
+                ></button>
+                <div class="led" style="left: 62px; top: 89px" data-led="eqPower"></div>
+                <div class="lg" style="left: 28px; top: 101px">Power</div>
+
+                <div class="ledwin">
+                  <canvas id="ladder" width="392" height="128"></canvas>
+                  <div class="glass"></div>
+                </div>
+                <div class="lg dim" style="left: 106px; top: 102px">Spectrum Analyzer</div>
+                <div class="lg dim" style="left: 312px; top: 102px; transform: translateX(-100%)">
+                  10 Band
+                </div>
+
+                <div id="faders"></div>
+
+                <div class="lg c" style="left: 560px; top: 13px">EQ</div>
+                <button class="tog" id="defeat" style="left: 560px; top: 36px"></button>
+                <div class="lg c dim" style="left: 560px; top: 50px">Defeat</div>
+                <div class="lg c" style="left: 560px; top: 62px">Rec</div>
+                <button class="tog" id="recPlay" style="left: 560px; top: 80px"></button>
+                <div class="lg c dim" style="left: 560px; top: 95px">Play</div>
+              </section>
+
+              <div class="gap" style="top: 272px"></div>
+
+              <!-- ============ INTEGRATED AMPLIFIER ============ -->
+              <section class="unit amp" aria-label="A-707 integrated amplifier">
+                <div class="handle" style="left: 2px; top: 28px; height: 142px"></div>
+                <div class="handle" style="right: 2px; top: 28px; height: 142px"></div>
+
+                <div class="meterwin" id="meterwin">
+                  <div class="meter l" id="meterL"></div>
+                  <div class="meter r" id="meterR"></div>
+                  <div class="lamp"></div>
+                  <div class="glass"></div>
+                </div>
+                <div class="lg dim" style="left: 30px; top: 128px">Power Output Level</div>
+                <div class="led red" style="left: 300px; top: 131px" data-led="peakL"></div>
+                <div class="led red" style="left: 310px; top: 131px" data-led="peakR"></div>
+                <div class="lg dim" style="left: 293px; top: 128px; transform: translateX(-100%)">
+                  Peak
+                </div>
+
+                <div class="brand" style="left: 356px; top: 20px; font-size: 21px">EKO</div>
+                <div
+                  class="model"
+                  style="left: 357px; top: 45px; line-height: 1.4; font-size: 6.5px"
+                >
+                  Integrated<br />Amplifier
+                </div>
+                <div class="model" style="left: 357px; top: 68px"><b>A-707</b></div>
+                <div class="lg dim" style="left: 357px; top: 84px; font-size: 5.5px">2 x 85 W</div>
+                <div class="lg dim" style="left: 357px; top: 92px; font-size: 5.5px">DC Servo</div>
+
+                <svg
+                  class="ticks"
+                  id="volTicks"
+                  style="left: 496px; top: 66px"
+                  width="132"
+                  height="132"
+                ></svg>
+                <div
+                  class="knob"
+                  id="volume"
+                  style="left: 496px; top: 66px; width: 92px; height: 92px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 496px; top: 118px; letter-spacing: 2px">Volume</div>
+
+                <button
+                  class="push"
+                  id="ampPower"
+                  style="left: 30px; top: 148px; width: 28px; height: 16px"
+                ></button>
+                <div class="led" style="left: 44px; top: 140px" data-led="ampPower"></div>
+                <div class="lg" style="left: 30px; top: 170px">Power</div>
+
+                <button class="jack" id="phones" style="left: 82px; top: 156px">
+                  <span class="plug"></span>
+                </button>
+                <div class="lg c" style="left: 82px; top: 170px">Phones</div>
+
+                <svg
+                  class="ticks"
+                  style="left: 122px; top: 156px"
+                  width="48"
+                  height="48"
+                  data-ticks="3"
+                  data-span="70"
+                ></svg>
+                <div
+                  class="knob black"
+                  id="speakers"
+                  style="left: 122px; top: 156px; width: 24px; height: 24px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 122px; top: 176px">Speakers</div>
+                <div class="lg c dim" style="left: 122px; top: 184px; font-size: 5px">
+                  A &#183; A+B &#183; B
+                </div>
+
+                <svg
+                  class="ticks"
+                  style="left: 170px; top: 156px"
+                  width="50"
+                  height="50"
+                  data-ticks="11"
+                  data-span="135"
+                ></svg>
+                <div
+                  class="knob"
+                  id="bass"
+                  style="left: 170px; top: 156px; width: 28px; height: 28px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 170px; top: 178px">Bass</div>
+
+                <svg
+                  class="ticks"
+                  style="left: 214px; top: 156px"
+                  width="50"
+                  height="50"
+                  data-ticks="11"
+                  data-span="135"
+                ></svg>
+                <div
+                  class="knob"
+                  id="treble"
+                  style="left: 214px; top: 156px; width: 28px; height: 28px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 214px; top: 178px">Treble</div>
+
+                <svg
+                  class="ticks"
+                  style="left: 258px; top: 156px"
+                  width="50"
+                  height="50"
+                  data-ticks="11"
+                  data-span="135"
+                ></svg>
+                <div
+                  class="knob"
+                  id="balance"
+                  style="left: 258px; top: 156px; width: 28px; height: 28px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 258px; top: 178px">Balance</div>
+                <div class="lg dim" style="left: 236px; top: 137px; font-size: 5px">L</div>
+                <div class="lg dim" style="left: 277px; top: 137px; font-size: 5px">R</div>
+
+                <button class="tog" id="loud" style="left: 306px; top: 156px"></button>
+                <div class="lg c" style="left: 306px; top: 172px">Loud</div>
+                <button class="tog" id="low" style="left: 330px; top: 156px"></button>
+                <div class="lg c" style="left: 330px; top: 172px">Low</div>
+                <button class="tog" id="high" style="left: 354px; top: 156px"></button>
+                <div class="lg c" style="left: 354px; top: 172px">High</div>
+                <button class="tog" id="mono" style="left: 382px; top: 156px"></button>
+                <div class="lg c" style="left: 382px; top: 172px">Mono</div>
+                <div class="rule" style="left: 322px; top: 183px; width: 40px"></div>
+                <div class="lg c dim" style="left: 342px; top: 187px; font-size: 5px">Filter</div>
+
+                <svg
+                  class="ticks"
+                  style="left: 420px; top: 156px"
+                  width="50"
+                  height="50"
+                  data-ticks="4"
+                  data-span="90"
+                ></svg>
+                <div
+                  class="knob black"
+                  id="tapeMon"
+                  style="left: 420px; top: 156px; width: 26px; height: 26px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 420px; top: 178px">Tape Mon</div>
+
+                <svg
+                  class="ticks"
+                  style="left: 530px; top: 162px"
+                  width="56"
+                  height="56"
+                  data-ticks="4"
+                  data-span="60"
+                ></svg>
+                <div
+                  class="knob"
+                  id="input"
+                  style="left: 530px; top: 162px; width: 32px; height: 32px"
+                >
+                  <div class="cap"></div>
+                  <div class="ind"></div>
+                </div>
+                <div class="lg c" style="left: 530px; top: 184px">Input</div>
+                <div
+                  class="lg dim"
+                  style="left: 506px; top: 146px; font-size: 5px; transform: translateX(-100%)"
+                >
+                  Phono
+                </div>
+                <div class="lg c dim" style="left: 518px; top: 132px; font-size: 5px">Tuner</div>
+                <div class="lg c dim" style="left: 542px; top: 132px; font-size: 5px">Aux</div>
+                <div class="lg dim" style="left: 554px; top: 146px; font-size: 5px">Tape</div>
+
+                <div class="foot" style="left: 40px"></div>
+                <div class="foot" style="right: 40px"></div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <aside class="jcard" aria-label="Cassette inlay card">
+          <div class="jcard-band"><b>EKO</b> C-60 <span>Low Noise</span></div>
+          <div class="jcard-side">Side A</div>
+          <ol class="jcard-list" id="tracklist"></ol>
+          <p class="jcard-empty" id="jcardEmpty">
+            Blank tape. Drop audio files anywhere, press EJECT to choose some, or just press PLAY.
+          </p>
+          <div class="jcard-take" id="take" hidden>
+            <span class="jcard-take-label">Recorded off the amp</span>
+            <a id="takeLink" download>Download the take</a>
+          </div>
+          <p class="jcard-note">Every control is live. Try DOLBY NR, INPUT and TAPE MON.</p>
+        </aside>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </main>
+
+    <nav class="pg-bar" aria-label="Playground">
+      <a href="../">Back to the Playground</a>
+      <span class="pg-hint"
+        ><kbd>Space</kbd> play/pause <kbd>S</kbd> stop <kbd>N</kbd> <kbd>P</kbd> next/prev
+        <kbd>E</kbd> eject</span
+      >
+    </nav>
+
+    <script type="module" src="./app.js"></script>
+    <script>
+      // If the module never runs (opened over file://, or dist/ not built), say why.
+      addEventListener("load", () => {
+        setTimeout(() => {
+          if (document.documentElement.dataset.ready) return;
+          document.getElementById("status").textContent =
+            location.protocol === "file:"
+              ? "This page has to be served over http: run npm run harness from the repo root."
+              : "Could not load the engine. Run npm run build first, then reload.";
+        }, 1500);
+      });
+    </script>
+  </body>
+</html>
