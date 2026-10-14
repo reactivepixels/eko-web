@@ -51,7 +51,18 @@ generated loop three times, so the first thing you hear is three tracks joining 
 seam. Drag a titlebar to move a window; drag the main window to carry everything docked to
 it. Z, X, C, V and B are prev, play, pause, stop and next, as they were.
 
-The pure parts (layout maths, the EQ chain, spectrum mapping, file handling) have unit
+**EKO hi-fi 1978 (`playground/hifi/`)** is a component stack: a D-55 cassette deck, a G-110
+graphic EQ and an A-707 amplifier, drawn in HTML, CSS and SVG and scaled as one piece. The
+tape is the engine's queue: drop files (or press EJECT) to load a cassette, and the spools,
+counter and tape packs follow the position through the whole side. The EQ and amp are a
+single composite insert (`setInserts([{ input, output }])`), so the panel can have parallel
+paths: mono and balance matrix, speaker voicing, headphone crossfeed and a tape echo on
+TAPE MON. Every control does something. DOLBY NR out lets you hear the tape (hiss, soft
+saturation, wow and flutter, set by the tape type), INPUT switches to a record (crackle),
+a radio between stations or a humming AUX lead, and REC records the amp's output to a
+download on the J-card. The VU needles have real ballistics.
+
+In both, the pure parts (layout maths, the audio chains, meters, file handling) have unit
 tests next to them as `*.test.js`, which `pnpm test` picks up.
 
 ## Vanilla demo (`index.html`), superseded by `player/`
