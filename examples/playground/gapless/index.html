@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GT-1 Gapless Blind Test</title>
+    <meta
+      name="description"
+      content="Two players, one track change. Guess which one was the EKO Web engine, then see the seam measured to the sample."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Doto:wght@400..900&family=Geist+Mono:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../shared/playground.css" />
+    <link rel="stylesheet" href="./gapless.css" />
+  </head>
+  <body>
+    <main class="room">
+      <div class="stage" id="stage">
+        <div class="device" id="device">
+          <div class="shadow"></div>
+          <div class="chassis">
+            <div class="face">
+              <i class="screw" style="left: 12px; top: 12px; --r: 35deg"></i>
+              <i class="screw" style="right: 12px; top: 12px; --r: -20deg"></i>
+              <i class="screw" style="left: 12px; bottom: 12px; --r: 80deg"></i>
+              <i class="screw" style="right: 12px; bottom: 12px; --r: 10deg"></i>
+
+              <header class="head">
+                <div class="logo">EKO<b>.</b><small>WEB</small></div>
+                <h1 class="model"><em>GT-1</em> Gapless blind test</h1>
+                <div class="leds" aria-hidden="true">
+                  <span class="led on"><i></i>PWR</span>
+                  <span class="led" data-led="play"><i></i>PLAY</span>
+                  <span class="led" data-led="clip"><i></i>CLIP</span>
+                  <span class="led on" data-led="rate"><i></i><span>--</span></span>
+                </div>
+              </header>
+
+              <div class="bezel">
+                <div class="screen">
+                  <canvas id="screen" width="660" height="268" aria-hidden="true"></canvas>
+                  <button class="screen-next" id="next" hidden>Next round</button>
+                  <div class="glare"></div>
+                </div>
+              </div>
+
+              <div class="rule" style="left: 26px; right: 26px; top: 340px"></div>
+              <div class="legend" style="left: 26px; top: 352px"><i>01</i>Audition</div>
+              <div class="legend" style="left: 266px; top: 352px"><i>02</i>Which one was EKO?</div>
+              <div class="legend" style="left: 476px; top: 352px"><i>03</i>Score</div>
+
+              <div class="well" style="left: 22px; top: 370px; width: 110px; height: 98px">
+                <button class="key" data-play="A" aria-label="Play A">
+                  <span class="kl">Play</span><span class="kled"></span><span class="kbig">A</span>
+                  <svg class="kicon" viewBox="0 0 14 14" aria-hidden="true">
+                    <path d="M3 1.8 L12 7 L3 12.2Z" />
+                  </svg>
+                </button>
+              </div>
+              <div class="well" style="left: 140px; top: 370px; width: 110px; height: 98px">
+                <button class="key" data-play="B" aria-label="Play B">
+                  <span class="kl">Play</span><span class="kled"></span><span class="kbig">B</span>
+                  <svg class="kicon" viewBox="0 0 14 14" aria-hidden="true">
+                    <path d="M3 1.8 L12 7 L3 12.2Z" />
+                  </svg>
+                </button>
+              </div>
+
+              <div class="well" style="left: 262px; top: 370px; width: 96px; height: 98px">
+                <button class="key" data-guess="A" aria-label="Guess A was EKO">
+                  <span class="kl">Guess</span><span class="kled"></span><span class="kbig">A</span>
+                </button>
+              </div>
+              <div class="well" style="left: 364px; top: 370px; width: 96px; height: 98px">
+                <button class="key" data-guess="B" aria-label="Guess B was EKO">
+                  <span class="kl">Guess</span><span class="kled"></span><span class="kbig">B</span>
+                </button>
+              </div>
+
+              <div
+                class="lcd"
+                style="left: 472px; top: 370px; width: 210px; height: 98px"
+                aria-hidden="true"
+              >
+                <div class="print" style="left: 14px; top: 12px">Correct</div>
+                <div class="print" style="left: 150px; top: 12px">Streak</div>
+                <div class="big" style="left: 12px; top: 28px" id="score">00<span>/</span>00</div>
+                <div class="mid" style="left: 149px; top: 31px" id="streak">00</div>
+                <div class="print hot" style="left: 150px; top: 62px" id="best">
+                  &#9650; Best 00
+                </div>
+                <div class="pips" style="left: 15px; top: 79px" id="pips"></div>
+                <div class="glare"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section class="notes">
+        <p class="lede" id="status" role="status" aria-live="polite">
+          Press <b>Play A</b> and <b>Play B</b>. Listen to the moment one song becomes the next.
+        </p>
+        <div class="cols">
+          <div>
+            <h2>The test</h2>
+            <p>
+              Each round is one continuous piece of music cut at a single sample into two files. One
+              key plays them with two plain <code>&lt;audio&gt;</code> tags, the second fully loaded
+              and started the instant the first ends. The other plays them through EKO. Which is
+              which changes every round.
+            </p>
+          </div>
+          <div>
+            <h2>The reveal</h2>
+            <p>
+              Both players are recorded sample by sample as they play. After you guess, the screen
+              shows what each one actually sent to your speakers, and measures the silence at the
+              seam. Nothing on it is drawn for effect.
+            </p>
+          </div>
+          <div>
+            <h2>Your own album</h2>
+            <p>
+              Drop two or more consecutive tracks from a gapless album (a live record, a DJ mix, a
+              concept album side), or
+              <button class="link" id="choose">choose files</button>. Each round becomes a real
+              track change from your music.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="pg-bar" aria-label="Playground">
+      <a href="../">Back to the Playground</a>
+      <span class="pg-hint"
+        ><kbd>1</kbd> <kbd>2</kbd> play A/B &nbsp; <kbd>A</kbd> <kbd>B</kbd> guess &nbsp;
+        <kbd>Enter</kbd> next</span
+      >
+    </nav>
+
+    <script type="module" src="./app.js"></script>
+    <script>
+      addEventListener("load", () => {
+        setTimeout(() => {
+          if (document.documentElement.dataset.ready) return;
+          document.getElementById("status").textContent =
+            location.protocol === "file:"
+              ? "This page has to be served over http: run npm run harness from the repo root."
+              : "Could not load the engine. Run npm run build first, then reload.";
+        }, 1500);
+      });
+    </script>
+  </body>
+</html>

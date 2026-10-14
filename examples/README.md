@@ -62,7 +62,16 @@ saturation, wow and flutter, set by the tape type), INPUT switches to a record (
 a radio between stations or a humming AUX lead, and REC records the amp's output to a
 download on the J-card. The VU needles have real ballistics.
 
-In both, the pure parts (layout maths, the audio chains, meters, file handling) have unit
+**GT-1 Gapless Blind Test (`playground/gapless/`)** puts the claim on the line. Each round is
+one continuous piece of music cut at a single sample into two WAV files. Key A or B plays
+them either with two plain `<audio>` tags (the second fully loaded and started on the first
+one's `ended`, the best a page can do without Web Audio) or through the engine, in a random
+order, with normalization off so level gives nothing away. An AudioWorklet records whichever
+player is sounding, and after you guess, the screen shows what each one actually played: the
+silence at the seam in milliseconds and samples, and a sample-level zoom of the join. Drop
+two or more consecutive tracks from your own album and the rounds become your track changes.
+
+In all of them, the pure parts (layout maths, the audio chains, meters, file handling) have unit
 tests next to them as `*.test.js`, which `pnpm test` picks up.
 
 ## Vanilla demo (`index.html`), superseded by `player/`
