@@ -6,6 +6,8 @@ export default defineConfig({
     // with a MockAudioContext, so no jsdom or browser is needed for the pure logic.
     globals: true,
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    // The examples are buildless JS, so their unit tests sit next to them as .test.js and
+    // stay out of tsconfig's typecheck.
+    include: ["tests/**/*.test.ts", "examples/**/*.test.js"],
   },
 });

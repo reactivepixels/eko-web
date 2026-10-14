@@ -1,0 +1,63 @@
+/* Chrome shared by every Playground page: the back bar and its hint. */
+:root {
+  --pg-bg: #e9e7e0;
+  --pg-light: #ffffff;
+  --pg-dark: #c3c1b8;
+  --pg-ink: #2c2b27;
+  --pg-ink-2: #6f6e67;
+  --pg-ink-3: #9b9a92;
+  --pg-accent: #ef6a1e;
+  --pg-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+}
+
+.pg-bar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: rgba(233, 231, 224, 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.25),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  font: 500 11px/1.4 var(--pg-mono);
+  letter-spacing: 0.06em;
+  color: var(--pg-ink-2);
+}
+.pg-bar a {
+  color: var(--pg-ink);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.pg-bar a::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pg-accent);
+  box-shadow: 0 0 6px var(--pg-accent);
+}
+.pg-bar a:hover,
+.pg-bar a:focus-visible {
+  color: var(--pg-accent);
+}
+.pg-hint kbd {
+  font: inherit;
+  color: var(--pg-ink);
+}
+@media (max-width: 640px) {
+  .pg-hint {
+    display: none;
+  }
+}
