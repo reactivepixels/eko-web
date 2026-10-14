@@ -1,0 +1,281 @@
+/* EKO Visuals: the canvas fills the window; the OSD and dock sit over it. */
+:root {
+  --osd: #f1ece2;
+  --acc: #ef6a1e;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #05040a;
+}
+.view {
+  position: fixed;
+  inset: 0;
+  color: var(--osd);
+  font-family: "Share Tech Mono", ui-monospace, monospace;
+}
+#gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.osd {
+  position: absolute;
+  font:
+    13px/1.25 "Share Tech Mono",
+    ui-monospace,
+    monospace;
+  color: var(--osd);
+  text-shadow:
+    1px 1px 0 rgba(0, 0, 0, 0.85),
+    0 0 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  transition: opacity 0.6s;
+}
+.tl {
+  top: 14px;
+  left: 16px;
+}
+.tl .mark {
+  font:
+    400 10px/1 "Silkscreen",
+    monospace;
+  letter-spacing: 0.12em;
+  opacity: 0.8;
+}
+.tl .mark b {
+  color: var(--acc);
+  font-weight: 400;
+}
+.tr {
+  top: 14px;
+  right: 16px;
+  text-align: right;
+  font-size: 14px;
+}
+.tr .fps {
+  opacity: 0.9;
+}
+.tr .rate {
+  opacity: 0.55;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.bl {
+  left: 16px;
+  bottom: 70px;
+  transition:
+    opacity 0.6s,
+    bottom 0.6s;
+  max-width: calc(100% - 220px);
+}
+.bl .song {
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bl .sub {
+  opacity: 0.6;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.br {
+  right: 16px;
+  bottom: 70px;
+  transition:
+    opacity 0.6s,
+    bottom 0.6s;
+  text-align: right;
+  font-size: 12px;
+  opacity: 0.6;
+}
+.bars {
+  display: inline-flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 9px;
+  margin-left: 8px;
+  vertical-align: -1px;
+}
+.bars i {
+  display: block;
+  width: 3px;
+  height: 2px;
+  background: var(--osd);
+  opacity: 0.8;
+}
+.msg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font:
+    14px/1 "Share Tech Mono",
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: lowercase;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+.msg.on {
+  opacity: 0.9;
+}
+
+/* The dock and the Playground bar fade away while you just watch. */
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(10, 9, 16, 0.62);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.4s;
+}
+.dock button {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--osd);
+  font:
+    500 11px/1 "Geist Mono",
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.dock button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dock button:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+.dock button[aria-pressed="true"] {
+  color: var(--acc);
+}
+.dock svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  display: block;
+  margin: 0 auto;
+}
+.dock .i-pause,
+.playing .dock .i-play {
+  display: none;
+}
+.playing .dock .i-pause {
+  display: block;
+}
+.dock .sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.idle .dock,
+.idle ~ .pg-bar {
+  opacity: 0;
+  pointer-events: none;
+}
+/* With the controls gone, the track info settles to the bottom edge. */
+.idle .bl,
+.idle .br {
+  bottom: 16px;
+}
+.idle {
+  cursor: none;
+}
+.pg-bar {
+  transition: opacity 0.4s;
+}
+
+.help {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px));
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: rgba(10, 9, 16, 0.82);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  font:
+    13px/1.5 "Share Tech Mono",
+    monospace;
+}
+.help[hidden] {
+  display: none;
+}
+.help h2 {
+  margin: 0 0 10px;
+  font:
+    400 10px/1 "Silkscreen",
+    monospace;
+  letter-spacing: 0.14em;
+  color: var(--acc);
+}
+.help dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.help dt {
+  color: var(--osd);
+}
+.help dd {
+  margin: 0;
+  opacity: 0.7;
+}
+.help p {
+  margin: 12px 0 0;
+  opacity: 0.6;
+}
+
+@media (max-width: 640px) {
+  .dock {
+    bottom: 64px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: calc(100% - 24px);
+  }
+  .dock .sep,
+  .dock [data-act="full"] {
+    display: none;
+  }
+  .bl,
+  .br {
+    bottom: 150px;
+  }
+  .bl {
+    max-width: calc(100% - 32px);
+  }
+  .br {
+    display: none;
+  }
+  .tr .preset {
+    font-size: 11px;
+  }
+}

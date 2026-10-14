@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EKO Visuals</title>
+    <meta
+      name="description"
+      content="A MilkDrop-style feedback visualizer in WebGL, driven by the EKO Web engine's analyser."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400..600&family=Share+Tech+Mono&family=Silkscreen&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../shared/playground.css" />
+    <link rel="stylesheet" href="./milkdrop.css" />
+  </head>
+  <body>
+    <main class="view" aria-label="EKO Visuals">
+      <canvas id="gl" aria-hidden="true"></canvas>
+
+      <div class="osd tl" aria-hidden="true">
+        <div class="mark"><b>&#9632;</b> EKO VISUALS</div>
+      </div>
+      <div class="osd tr" aria-hidden="true">
+        <div class="preset" id="preset"></div>
+        <div class="fps" id="fps"></div>
+        <div class="rate" id="rating"></div>
+      </div>
+      <div class="osd bl">
+        <div class="song" id="song">Press play, or drop some music anywhere.</div>
+        <div class="sub" aria-hidden="true">
+          <span id="time">0:00 / 0:00</span> &nbsp; <span id="bpm"></span> &nbsp;
+          <span id="gapless">gapless</span
+          ><span class="bars" id="bars"><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+      </div>
+      <div class="osd br" id="format" aria-hidden="true"></div>
+      <div class="msg" id="msg" role="status" aria-live="polite"></div>
+
+      <div class="dock" role="toolbar" aria-label="Player and preset controls">
+        <button data-act="open" title="Open files (O)">Open</button>
+        <span class="sep"></span>
+        <button data-act="prev" title="Previous track (Z)" aria-label="Previous track">
+          <svg viewBox="0 0 16 16"><path d="M3 3h2v10H3zM13 3v10L6 8z" /></svg>
+        </button>
+        <button data-act="toggle" id="playBtn" title="Play or pause (X / C)" aria-label="Play">
+          <svg viewBox="0 0 16 16" class="i-play"><path d="M4 2.5v11L13 8z" /></svg>
+          <svg viewBox="0 0 16 16" class="i-pause"><path d="M4 3h3v10H4zM9 3h3v10H9z" /></svg>
+        </button>
+        <button data-act="next" title="Next track (B)" aria-label="Next track">
+          <svg viewBox="0 0 16 16"><path d="M11 3h2v10h-2zM3 3v10l7-5z" /></svg>
+        </button>
+        <span class="sep"></span>
+        <button data-act="presetPrev" title="Previous preset (Backspace)">&lsaquo; Preset</button>
+        <button data-act="lock" id="lockBtn" title="Lock this preset (L)" aria-pressed="false">
+          Lock
+        </button>
+        <button data-act="presetNext" title="Next preset (Space; H for a hard cut)">
+          Preset &rsaquo;
+        </button>
+        <span class="sep"></span>
+        <button data-act="full" title="Full screen (F)">Full screen</button>
+        <button data-act="help" title="Keys (?)" aria-label="Keyboard shortcuts">?</button>
+      </div>
+
+      <section class="help" id="help" hidden aria-label="Keyboard shortcuts">
+        <h2>Keys</h2>
+        <dl>
+          <dt>Space</dt>
+          <dd>next preset, blended</dd>
+          <dt>H</dt>
+          <dd>next preset, hard cut</dd>
+          <dt>Backspace</dt>
+          <dd>previous preset</dd>
+          <dt>L</dt>
+          <dd>lock or unlock the preset</dd>
+          <dt>Z X C V B</dt>
+          <dd>previous, play, pause, stop, next</dd>
+          <dt>O</dt>
+          <dd>open files</dd>
+          <dt>F</dt>
+          <dd>full screen</dd>
+          <dt>?</dt>
+          <dd>this list</dd>
+        </dl>
+        <p>
+          Drop audio files anywhere to play them. The waves, warp and colours all follow the
+          engine's analyser.
+        </p>
+      </section>
+    </main>
+
+    <nav class="pg-bar" aria-label="Playground">
+      <a href="../">Back to the Playground</a>
+      <span class="pg-hint">Move the mouse for controls. <kbd>?</kbd> for keys.</span>
+    </nav>
+
+    <script type="module" src="./app.js"></script>
+    <script>
+      addEventListener("load", () => {
+        setTimeout(() => {
+          if (document.documentElement.dataset.ready) return;
+          document.getElementById("song").textContent =
+            location.protocol === "file:"
+              ? "This page has to be served over http: run npm run harness from the repo root."
+              : "Could not load the engine. Run npm run build first, then reload.";
+        }, 1500);
+      });
+    </script>
+  </body>
+</html>

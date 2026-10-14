@@ -71,6 +71,16 @@ player is sounding, and after you guess, the screen shows what each one actually
 silence at the seam in milliseconds and samples, and a sample-level zoom of the join. Drop
 two or more consecutive tracks from your own album and the rounds become your track changes.
 
+**EKO Visuals (`playground/milkdrop/`)** is a MilkDrop-style visualizer in WebGL 2. Every
+frame, the last frame is warped (zoom, rotation, swirl, ripple, a kaleidoscope) and faded in
+half-float feedback buffers, and the new waveform and comets are drawn on top, so trails and
+smoke build up on their own. Eight presets are per-frame equations of the engine's analyser
+(bass, mid and treble relative to their own average, with smoothed versions and beat
+detection); they rotate every 20 seconds or so and blend across 2.7 seconds. Press Play with
+nothing loaded for a generated 64 second set in four tracks that only sounds continuous if
+playback is gapless. Space changes preset, H cuts, L locks, and Z, X, C, V, B are the
+transport.
+
 In all of them, the pure parts (layout maths, the audio chains, meters, file handling) have unit
 tests next to them as `*.test.js`, which `pnpm test` picks up.
 
