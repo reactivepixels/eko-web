@@ -84,14 +84,41 @@ describe("seam measurement", () => {
   it("puts a seamless seam where the second file began", () => {
     const s = new Float32Array(RATE * 7);
     s.set(tone(RATE * 6), 50);
-    expect(measureSeam(s, RATE, 3)).toEqual({ at: 50 + RATE * 3, samples: 0, ms: 0 });
+    expect(measureSeam(s, RATE, 3)).toEqual({ at: 50 + RATE * 3, samples: 0, ms: 0, valid: true });
   });
 
-  it("reports a gap in samples and milliseconds", () => {
-    const s = new Float32Array(RATE);
-    s.set(tone(1000), 10);
-    s.set(tone(1000), 10 + 1000 + 400);
-    expect(measureSeam(s, RATE, 3)).toEqual({ at: 1010, samples: 400, ms: 50 });
+  it("reports a gap at the seam in samples and milliseconds", () => {
+    const s = new Float32Array(RATE * 8);
+    s.set(tone(RATE * 3), 10);
+    s.set(tone(RATE * 3), 10 + RATE * 3 + 400);
+    expect(measureSeam(s, RATE, 3)).toEqual({
+      at: 10 + RATE * 3,
+      samples: 400,
+      ms: 50,
+      valid: true,
+    });
+  });
+
+  it("ignores quiet far from the seam, such as a player starting late", () => {
+    const s = new Float32Array(RATE * 9);
+    s.set(tone(200), 0);
+    s.set(tone(RATE * 6), RATE);
+    const m = measureSeam(s, RATE, 3);
+    expect(m.samples).toBe(0);
+    expect(m.valid).toBe(true);
+  });
+
+  it("only counts silence beyond what the music already has", () => {
+    const s = new Float32Array(RATE * 8);
+    s.set(tone(RATE * 3), 0);
+    s.set(tone(RATE * 3), RATE * 3 + 300);
+    expect(measureSeam(s, RATE, 3, 300).samples).toBe(0);
+    expect(measureSeam(s, RATE, 3, 100).samples).toBe(200);
+  });
+
+  it("will not report 0 for a capture that recorded nothing", () => {
+    expect(measureSeam(new Float32Array(RATE * 7), RATE, 3).valid).toBe(false);
+    expect(measureSeam(tone(RATE), RATE, 3).valid).toBe(false);
   });
 
   it("takes peak columns and groups thousands", () => {

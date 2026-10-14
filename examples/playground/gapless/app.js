@@ -8,7 +8,7 @@ import { isAudioFile, titleFromName } from "../shared/files.js";
 import { createCapture } from "./audio/capture.js";
 import { CLIP_RATE, HALF, renderRound, ROUNDS, splitAt } from "./audio/clips.js";
 import { createEkoPlayer, createTagPlayer } from "./audio/players.js";
-import { measureSeam } from "./audio/seam.js";
+import { contentStart, findGap, measureSeam, SEARCH } from "./audio/seam.js";
 import {
   advance,
   canGuess,
@@ -48,26 +48,56 @@ const view = {
 
 let audio = null;
 let audioReady = null;
+let players = null;
 
-/** Builds the players and the capture point. Call engine.context.resume() before awaiting. */
+/**
+ * The two players, built synchronously so the tag's elements can be unlocked inside the
+ * gesture. Only the player under test is wired to the capture, and only while it plays:
+ * the other one's fade-out must never end up in the recording.
+ */
+function ensurePlayers() {
+  if (players) return players;
+  const ctx = engine.context;
+  const tagOut = ctx.createGain();
+  tagOut.connect(ctx.destination);
+  players = {
+    ctx,
+    tag: createTagPlayer(ctx, tagOut),
+    eko: createEkoPlayer(engine),
+    taps: { tag: tagOut, eko: engine.analyser },
+  };
+  $('[data-led="rate"] span').textContent = `${Math.round(ctx.sampleRate / 100) / 10}K`;
+  return players;
+}
+
+/** Players plus the capture point. A failed setup is not cached: the next press retries. */
 function ensureAudio() {
   audioReady ??= (async () => {
-    const ctx = engine.context;
-    const capture = await createCapture(ctx);
-    const tagOut = ctx.createGain();
-    tagOut.connect(ctx.destination);
-    tagOut.connect(capture.input);
-    engine.analyser.connect(capture.input);
-    audio = {
-      ctx,
-      capture,
-      tag: createTagPlayer(ctx, tagOut),
-      eko: createEkoPlayer(engine),
-    };
-    $('[data-led="rate"] span').textContent = `${Math.round(ctx.sampleRate / 100) / 10}K`;
+    const p = ensurePlayers();
+    const capture = await createCapture(p.ctx);
+    audio = { ...p, capture };
     return audio;
-  })();
+  })().catch((err) => {
+    audioReady = null;
+    throw err;
+  });
   return audioReady;
+}
+
+let wired = null;
+function wire(tap) {
+  unwire();
+  tap.connect(audio.capture.input);
+  wired = tap;
+}
+function unwire() {
+  if (!wired) return;
+  try {
+    wired.disconnect(audio.capture.input);
+  } catch {
+    // Already gone.
+  }
+  wired = null;
 }
 
 /* ------------------------------------------------------------------ rounds */
@@ -77,9 +107,35 @@ const splitTitle = (t) => {
   return m ? [m[1], m[2]] : ["", t];
 };
 
+/** Rounds in progress, so two presses never build (or decode) the same round twice. */
+const pending = new Map();
+/** Bumped when the source changes: a round finished for an old album is thrown away. */
+let generation = 0;
+
 /** One round's two files, plus the music as written for the screen before the reveal. */
-async function buildRound(index) {
-  if (built.has(index)) return built.get(index);
+function buildRound(index) {
+  if (!pending.has(index)) {
+    const gen = generation;
+    const p = makeRound(index).then((round) => {
+      if (gen !== generation) {
+        round.urls.forEach((u) => URL.revokeObjectURL(u));
+        throw new Error("stale");
+      }
+      // Silence the music itself has at the seam, so only the player's is counted.
+      const mid = Math.round(round.half * round.rate);
+      const reach = Math.round(SEARCH * round.rate);
+      round.sourceGapSec = findGap(round.source, mid - reach, mid + reach).length / round.rate;
+      round.leadIn = Math.max(0, contentStart(round.source)) / round.rate;
+      built.set(index, round);
+      return round;
+    });
+    p.catch(() => pending.delete(index));
+    pending.set(index, p);
+  }
+  return pending.get(index);
+}
+
+async function makeRound(index) {
   let round;
   if (source.kind === "builtin") {
     const meta = ROUNDS[index % ROUNDS.length];
@@ -102,7 +158,6 @@ async function buildRound(index) {
   } else {
     round = await albumRound(index);
   }
-  built.set(index, round);
   return round;
 }
 
@@ -149,48 +204,88 @@ async function albumRound(index) {
 }
 
 function dropRounds() {
+  generation += 1;
   for (const r of built.values()) r.urls.forEach((u) => URL.revokeObjectURL(u));
   built.clear();
+  pending.clear();
 }
 
 /* ------------------------------------------------------------------ play, guess, next */
 
 let playToken = 0;
 
+let auditionTimer = 0;
+
 function stopPlaying() {
   playToken += 1;
+  clearTimeout(auditionTimer);
   if (!audio || !view.playing) return;
   audio.tag.stop();
   audio.eko.stop();
+  unwire();
   audio.capture.stop();
   view.playing = null;
   render();
 }
 
 async function play(side) {
-  // Safari only starts audio inside the gesture: wake the context before any await.
+  // Safari only starts audio inside the gesture: wake the context, and let the tag's
+  // elements play once, before any await.
   engine.context.resume().catch(() => {});
+  const ready = built.get(game.index);
+  ensurePlayers().tag.unlock(ready?.urls);
   if (view.playing === side) return stopPlaying();
   stopPlaying();
   const mine = playToken;
-  const a = await ensureAudio();
-  const r = await buildRound(game.index);
-  if (mine !== playToken) return;
   const index = game.index;
+  let a;
+  let r;
+  try {
+    a = await ensureAudio();
+    r = await buildRound(index);
+  } catch (err) {
+    if (mine !== playToken || err?.message === "stale") return;
+    say(
+      err?.name === "RangeError"
+        ? "Those tracks are too long to decode here. Try shorter ones."
+        : `The test could not start in this browser (${err?.name || "error"}).`,
+    );
+    return;
+  }
+  if (mine !== playToken) return;
   view.playing = side;
   render();
-  const player = game.eko[index] === side ? a.eko : a.tag;
+  const who = game.eko[index] === side ? "eko" : "tag";
+  const fail = (err) => {
+    if (mine !== playToken) return;
+    stopPlaying();
+    say(`That one would not play (${err?.code || err?.name || err?.message || "error"}).`);
+  };
+  wire(a.taps[who]);
   a.capture.start();
+  // Never record forever: a stuck player is a failed audition.
+  auditionTimer = setTimeout(() => fail(new Error("timed out")), (r.half * 2 + 8) * 1000);
   say(`Playing ${side}. Listen for the moment ${r.from} becomes ${r.to}.`);
-  try {
-    await player.play(r.urls, async () => {
+  await a[who].play(
+    r.urls,
+    async () => {
       if (mine !== playToken) return;
+      clearTimeout(auditionTimer);
       // A little extra, so a late tail is in the recording too.
       await new Promise((res) => setTimeout(res, 120));
       if (mine !== playToken) return;
+      unwire();
       const samples = await a.capture.stop();
+      if (mine !== playToken) return;
+      const rate = a.ctx.sampleRate;
       view.captures[side] = samples;
-      view.seams[side] = measureSeam(samples, a.ctx.sampleRate, r.half);
+      view.seams[side] = measureSeam(
+        samples,
+        rate,
+        r.half,
+        Math.round(r.sourceGapSec * rate),
+        r.leadIn,
+      );
       view.clipped ||= samples.some((v) => Math.abs(v) >= 0.999);
       view.playing = null;
       hear(game, side);
@@ -198,15 +293,17 @@ async function play(side) {
         canGuess(game) ? "Heard both. Which one was EKO?" : `Now play ${side === "A" ? "B" : "A"}.`,
       );
       render();
-    });
-  } catch (err) {
-    if (mine !== playToken) return;
-    view.playing = null;
-    a.capture.stop();
-    say(`That one would not play (${err?.code || err?.name || "error"}).`);
-    render();
-  }
+    },
+    fail,
+  );
 }
+
+const describeSeam = (m) =>
+  !m || !m.valid
+    ? "could not be measured"
+    : m.samples > 0
+      ? `left ${m.ms.toFixed(1)} ms of silence`
+      : "joined with no gap";
 
 function makeGuess(side) {
   if (revealed(game)) return;
@@ -218,16 +315,16 @@ function makeGuess(side) {
   const right = guess(game, side);
   view.chosen = side;
   saveBest();
-  const tag = view.seams[game.eko[game.index] === "A" ? "B" : "A"];
-  const gapMs = tag ? tag.ms.toFixed(1) : "?";
+  const eko = game.eko[game.index];
+  const tagS = eko === "A" ? "B" : "A";
   say(
-    right
-      ? `Right: ${side} was EKO. The bare tag left ${gapMs} ms of silence at the seam.`
-      : `Not this time: ${side} was the bare tag, with ${gapMs} ms of silence at the seam.`,
+    `${right ? "Right" : "Not this time"}: ${eko} was EKO and ${describeSeam(view.seams[eko])}. ` +
+      `${tagS}, the bare tag, ${describeSeam(view.seams[tagS])}. ` +
+      `Score ${correctCount(game)} of ${playedCount(game)}.`,
   );
   if (finished(game)) {
     const c = correctCount(game);
-    setTimeout(() => say(`${c} out of ${game.count}. ${verdict(c, game.count)}`), 2600);
+    sayTimer = setTimeout(() => say(`${c} out of ${game.count}. ${verdict(c, game.count)}`), 2600);
   }
   render();
 }
@@ -302,7 +399,14 @@ function useAlbum(files) {
   ensureAudio()
     .then(() => buildRound(0))
     .then(render)
-    .catch(() => say("Those files would not decode in this browser."));
+    .catch((err) => {
+      if (err?.message === "stale") return;
+      say(
+        err?.name === "RangeError"
+          ? "Those tracks are too long to decode here. Try shorter ones."
+          : "Those files would not decode in this browser.",
+      );
+    });
   render();
 }
 
@@ -385,7 +489,7 @@ function screenState() {
   const isRevealed = revealed(game);
   const lanes = {};
   for (const side of ["A", "B"]) {
-    if (isRevealed && view.captures[side]) {
+    if (isRevealed && view.captures[side] && view.seams[side].valid) {
       lanes[side] = {
         samples: view.captures[side],
         at: view.seams[side].at,
@@ -397,7 +501,8 @@ function screenState() {
         samples: r?.source ?? new Float32Array(0),
         at: r ? Math.round(r.half * r.rate) : 0,
         rate: r?.rate ?? CLIP_RATE,
-        seam: { samples: 0 },
+        // Revealed but not measurable: say so rather than draw a clean seam.
+        seam: { samples: 0, valid: !(isRevealed && view.captures[side]) },
       };
     }
   }
@@ -470,6 +575,7 @@ document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if ((k === "enter" || k === " ") && e.target instanceof HTMLButtonElement) return;
+  if (e.repeat) return;
   const run = KEYS[k];
   if (!run) return;
   e.preventDefault();

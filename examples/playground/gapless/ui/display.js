@@ -192,7 +192,12 @@ export function drawScreen(c, s) {
     ["A", "B"].forEach((side, li) => {
       const ln = LANES[li];
       const m = s.lanes[side].seam;
-      if (m.samples > 0) {
+      if (m.valid === false) {
+        mono(c, 8, 700);
+        c.textAlign = "left";
+        c.fillStyle = "rgba(233,231,224,.6)";
+        c.fillText("NOT MEASURED  \u00b7  CAPTURE INCOMPLETE", BX + 8, ln.y + 3);
+      } else if (m.samples > 0) {
         const gw = Math.max(1, (m.samples / s.lanes[side].rate) * PPS);
         hatch(c, BX + 1, ln.y + 4, gw, ln.h - 8);
         c.strokeStyle = "rgba(239,106,30,.75)";
@@ -378,7 +383,8 @@ export function drawScreen(c, s) {
     ["A", "B"].forEach((side, i) => {
       const m = s.lanes[side].seam;
       c.fillStyle = m.samples > 0 ? ORANGE : "rgba(244,242,235,.9)";
-      c.fillText(`${side}  Δ ${formatSamples(m.samples)}`, ZX + i * 62, 254);
+      const delta = m.valid === false ? "?" : formatSamples(m.samples);
+      c.fillText(`${side}  \u0394 ${delta}`, ZX + i * 62, 254);
     });
   } else {
     mono(c, 8, 600);
