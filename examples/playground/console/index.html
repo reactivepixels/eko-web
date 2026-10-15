@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EKO NB-124 Night Bus Console</title>
+    <meta
+      name="description"
+      content="A drum machine and an eight-channel mixing desk on the EKO Web engine: the Night Bus groove, its stems on faders, and a tape echo."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Caveat:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../shared/playground.css" />
+    <link rel="stylesheet" href="./console.css" />
+  </head>
+  <body>
+    <main class="stage" id="stage" aria-label="EKO NB-124 Night Bus console">
+      <div class="console">
+        <div class="shadow"></div>
+        <div class="cheek l"></div>
+        <div class="cheek r"></div>
+        <div class="face" id="face">
+          <i class="screw" style="left: 8px; top: 8px; --r: 20deg"></i>
+          <i class="screw" style="right: 8px; top: 8px; --r: 70deg"></i>
+          <i class="screw" style="left: 8px; bottom: 8px; --r: -30deg"></i>
+          <i class="screw" style="right: 8px; bottom: 8px; --r: 10deg"></i>
+          <div class="rhythm"></div>
+        </div>
+      </div>
+    </main>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <nav class="pg-bar" aria-label="Playground">
+      <a href="../">Back to the Playground</a>
+      <span class="pg-hint"
+        ><kbd>Space</kbd> start/stop &nbsp; <kbd>A</kbd> <kbd>B</kbd> <kbd>C</kbd>
+        <kbd>D</kbd> pattern &nbsp; click a step to program it</span
+      >
+    </nav>
+
+    <script type="module" src="./app.js"></script>
+    <script>
+      addEventListener("load", () => {
+        setTimeout(() => {
+          if (document.documentElement.dataset.ready) return;
+          document.getElementById("status").textContent =
+            location.protocol === "file:"
+              ? "This page has to be served over http: run npm run harness from the repo root."
+              : "Could not load the engine. Run npm run build first, then reload.";
+        }, 1500);
+      });
+    </script>
+  </body>
+</html>

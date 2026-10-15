@@ -1,0 +1,612 @@
+/*
+ * EKO NB-124, the Night Bus console. Laid out in design units (1360 x 820) and scaled to
+ * the window as one piece, like the hi-fi. Ported from the approved concept.
+ */
+:root {
+  --legend: #d9d4c8;
+  --legend-dim: #8f8a80;
+  --accent: #ef6a1e;
+  --brushed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.002 0.9' numOctaves='2' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  --wood: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='600'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.012' numOctaves='3' seed='9'/%3E%3CfeColorMatrix values='0 0 0 0 0.25 0 0 0 0 0.12 0 0 0 0 0.05 0 0 0 0.75 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body {
+  background: #0b0a09;
+}
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px 16px 84px;
+  font-family: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  color: var(--legend);
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 40%, rgba(120, 100, 80, 0.22), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(180deg, #151413, #0b0a09 75%, #070707);
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--grain);
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+}
+
+/* Design units: the console is 1360 x 820, scaled to the window. */
+.stage {
+  width: calc(1360px * var(--s, 1));
+  height: calc(850px * var(--s, 1));
+  position: relative;
+}
+.console {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1360px;
+  height: 820px;
+  transform: scale(var(--s, 1));
+  transform-origin: 0 0;
+}
+.shadow {
+  position: absolute;
+  left: 30px;
+  right: 30px;
+  bottom: -26px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0) 70%);
+  filter: blur(4px);
+}
+
+/* Walnut end cheeks */
+.cheek {
+  position: absolute;
+  top: 0;
+  width: 34px;
+  height: 820px;
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.45),
+      rgba(255, 255, 255, 0.06) 30%,
+      rgba(0, 0, 0, 0) 55%,
+      rgba(0, 0, 0, 0.5)
+    ),
+    var(--wood), linear-gradient(180deg, #5a3520, #3f2414 60%, #2e190d);
+  box-shadow:
+    0 0 0 1px #120a05,
+    inset 0 1px 0 rgba(255, 220, 180, 0.15),
+    0 12px 30px rgba(0, 0, 0, 0.6);
+}
+.cheek.l {
+  left: 0;
+}
+.cheek.r {
+  right: 0;
+}
+
+.face {
+  position: absolute;
+  left: 34px;
+  right: 34px;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 2px),
+    radial-gradient(
+      ellipse 70% 60% at 40% 0%,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0) 60%
+    ),
+    var(--brushed), linear-gradient(180deg, #1f1f20, #19191a 60%, #141415);
+  background-size:
+    auto,
+    auto,
+    600px 200px,
+    auto;
+  background-blend-mode: normal, normal, overlay, normal;
+  box-shadow:
+    0 0 0 1px #050505,
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.lg {
+  position: absolute;
+  font-size: 7px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--legend);
+  white-space: nowrap;
+  line-height: 1;
+}
+.lg.c {
+  transform: translateX(-50%);
+  text-align: center;
+}
+.lg.dim {
+  color: var(--legend-dim);
+}
+.brand {
+  position: absolute;
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: 5px;
+  color: #ece7dc;
+  line-height: 1;
+}
+.rule {
+  position: absolute;
+  height: 1px;
+  background: rgba(217, 212, 200, 0.25);
+}
+.vrule {
+  position: absolute;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.65);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+.screw {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.55) 0, rgba(255, 255, 255, 0) 32%),
+    radial-gradient(circle, #9c9c9a 0, #7d7d7b 48%, #4a4a49 78%, #2a2a29 100%);
+  box-shadow:
+    0 0 0 0.75px #0c0c0c,
+    0 0 0 1.5px rgba(0, 0, 0, 0.35),
+    inset 0 -0.75px 1px rgba(0, 0, 0, 0.45);
+}
+.screw::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 1.3px;
+  margin: -0.65px 0 0 -3px;
+  background: linear-gradient(180deg, #0d0d0c, #262624);
+  box-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.28);
+  transform: rotate(var(--r, 30deg));
+}
+
+/* ---------- rhythm section ---------- */
+.rhythm {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 262px;
+  border-bottom: 1px solid #050505;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.display {
+  position: absolute;
+  border-radius: 3px;
+  background: #0b0201;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 2px #3a3a38,
+    0 0 0 3px #101010,
+    0 1px 0 3px rgba(255, 255, 255, 0.07),
+    inset 0 2px 6px #000;
+}
+.display svg {
+  position: absolute;
+  inset: 0;
+}
+
+.pad {
+  position: absolute;
+  width: 38px;
+  height: 33px;
+  border-radius: 3px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.4),
+      rgba(255, 255, 255, 0) 28%,
+      rgba(0, 0, 0, 0.16)
+    ),
+    linear-gradient(90deg, #cfc9bb, #ddd7c9 50%, #cbc5b7);
+  box-shadow:
+    0 0 0 1px #050505,
+    0 3px 0 rgba(0, 0, 0, 0.55),
+    0 4px 0 #050505,
+    0 6px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.pad i {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 8px;
+  height: 4px;
+  margin-left: -4px;
+  border-radius: 1px;
+  background: #3a1a0c;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.7);
+}
+.pad.on i {
+  background: #ff3b1a;
+  box-shadow:
+    0 0 4px 1px rgba(255, 60, 25, 0.9),
+    0 0 10px 2px rgba(255, 60, 25, 0.4);
+}
+.pad b {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  font: 700 8px/1 "Archivo";
+  letter-spacing: 0.5px;
+  text-align: center;
+  color: rgba(40, 30, 20, 0.75);
+}
+.pad.cur {
+  filter: brightness(1.12);
+}
+.band {
+  position: absolute;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--cap);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.col-cur {
+  position: absolute;
+  width: 44px;
+  border-radius: 4px;
+  background: rgba(255, 120, 40, 0.1);
+  box-shadow: 0 0 0 1px rgba(255, 120, 40, 0.35);
+}
+
+/* knobs */
+.knob {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 50% 60%, #0d0d0d 0 58%, rgba(0, 0, 0, 0) 60%),
+    repeating-conic-gradient(#3a3a3a 0 4deg, #121212 4deg 8deg);
+  box-shadow:
+    0 0 0 1px #000,
+    0 4px 5px rgba(0, 0, 0, 0.75),
+    0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.knob .cap {
+  position: absolute;
+  inset: 20%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 32%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 45%),
+    var(--cap, #777);
+  box-shadow:
+    inset 0 -2px 3px rgba(0, 0, 0, 0.45),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.knob .ind {
+  position: absolute;
+  left: calc(50% - 1px);
+  top: 9%;
+  width: 2px;
+  height: 34%;
+  border-radius: 1px;
+  background: var(--ind, #f4f1e8);
+  transform-origin: 50% 120%;
+  transform: rotate(var(--a, 0deg));
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.ticks {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* buttons */
+.btn {
+  position: absolute;
+  border-radius: 3px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.3),
+      rgba(255, 255, 255, 0) 35%,
+      rgba(0, 0, 0, 0.25)
+    ),
+    var(--cap, #d9d4c8);
+  box-shadow:
+    0 0 0 1px #050505,
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 3px 3px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.btn.lit {
+  box-shadow:
+    0 0 0 1px #050505,
+    0 2px 0 rgba(0, 0, 0, 0.6),
+    0 0 10px 1px var(--glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.btn b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 800 8px/1 "Archivo";
+  letter-spacing: 1px;
+  color: rgba(25, 18, 12, 0.82);
+}
+
+/* ---------- mixer ---------- */
+.strip {
+  position: absolute;
+  top: 270px;
+  width: 104px;
+  height: 540px;
+}
+.strip .num {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  font: 800 11px/1 "Archivo";
+  font-stretch: 110%;
+  color: #ece7dc;
+}
+.scribble {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 22px;
+  border-radius: 1.5px;
+  background: linear-gradient(180deg, #f2ecdc, #e3d9c2);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  font:
+    600 17px/22px "Caveat",
+    cursive;
+  color: #1d2752;
+  text-align: center;
+  transform: rotate(var(--t, 0deg));
+}
+.slot {
+  position: absolute;
+  width: 5px;
+  border-radius: 3px;
+  background: #000;
+  box-shadow:
+    inset 0 1px 2px #000,
+    0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.fcap {
+  position: absolute;
+  width: 30px;
+  height: 46px;
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.18) 0,
+      rgba(255, 255, 255, 0) 12%,
+      rgba(0, 0, 0, 0) 85%,
+      rgba(0, 0, 0, 0.4)
+    ),
+    repeating-linear-gradient(180deg, #2b2b2b 0 3px, #1a1a1a 3px 5px);
+  box-shadow:
+    0 0 0 1px #000,
+    0 6px 6px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.fcap::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--line, #f1ece2);
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.25);
+}
+.fscale {
+  position: absolute;
+  height: 1px;
+  background: rgba(217, 212, 200, 0.35);
+}
+.meter {
+  position: absolute;
+  width: 7px;
+}
+.meter i {
+  position: absolute;
+  left: 0;
+  width: 7px;
+  height: 5px;
+  border-radius: 1px;
+  background: rgba(120, 255, 90, 0.08);
+}
+.meter i.g.on {
+  background: #6dff4a;
+  box-shadow: 0 0 5px rgba(110, 255, 74, 0.8);
+}
+.meter i.y.on {
+  background: #ffd43a;
+  box-shadow: 0 0 5px rgba(255, 212, 58, 0.8);
+}
+.meter i.r.on {
+  background: #ff3b1a;
+  box-shadow: 0 0 5px rgba(255, 59, 26, 0.8);
+}
+.meter i.y {
+  background: rgba(255, 212, 58, 0.08);
+}
+.meter i.r {
+  background: rgba(255, 59, 26, 0.1);
+}
+
+/* master VU, after the hi-fi */
+.vuwin {
+  position: absolute;
+  border-radius: 3px;
+  background: #050505;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 2px #4d4d4b,
+    0 0 0 3px #141414,
+    0 1px 0 3px rgba(255, 255, 255, 0.08),
+    0 0 22px 3px rgba(255, 150, 50, 0.1),
+    inset 0 2px 6px #000;
+}
+.vu {
+  position: absolute;
+  top: 6px;
+  width: 112px;
+  height: 72px;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: inset 0 0 12px rgba(70, 30, 0, 0.55);
+}
+.glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 3px;
+  background: linear-gradient(
+    162deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.04) 34%,
+    rgba(255, 255, 255, 0) 35%
+  );
+}
+
+.group {
+  position: absolute;
+  font: 700 7px/1 "Archivo";
+  letter-spacing: 2px;
+  color: var(--legend-dim);
+  text-transform: uppercase;
+}
+.group::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 2px;
+  background: var(--gc, #ef6a1e);
+  opacity: 0.8;
+  border-radius: 1px;
+}
+
+/* ---------- interaction ---------- */
+.console button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.console [role="slider"] {
+  cursor: grab;
+  touch-action: none;
+}
+.console [role="slider"]:active {
+  cursor: grabbing;
+}
+.console :focus {
+  outline: none;
+}
+.console :focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 3px;
+}
+.pointer .console :focus-visible {
+  outline: none;
+}
+.knob:focus-visible {
+  border-radius: 50%;
+}
+.pad {
+  transition:
+    transform 60ms,
+    box-shadow 60ms;
+}
+.pad:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 0 0 1px #050505,
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 0 #050505,
+    0 3px 3px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.fader {
+  position: absolute;
+  width: 36px;
+  transform: translateX(-50%);
+}
+.fader .ftrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 23px;
+  bottom: 23px;
+}
+.display.dim svg {
+  opacity: 0.55;
+}
+.display.blink svg {
+  animation: blink 0.5s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+.hint {
+  position: absolute;
+  font: 600 7px/1.4 "Archivo";
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--legend-dim);
+}
+.status {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 64px;
+  text-align: center;
+  font:
+    500 11px/1.4 ui-monospace,
+    "SF Mono",
+    Menlo,
+    monospace;
+  letter-spacing: 0.06em;
+  color: #8f8a80;
+  pointer-events: none;
+}

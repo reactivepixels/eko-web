@@ -7,12 +7,12 @@
     <title>EKO Web Playground</title>
     <meta
       name="description"
-      content="Six players you remember, rebuilt on the EKO Web audio engine: Winamp, an iPod Classic, a 1978 hi-fi, a gapless blind test, a MilkDrop visualizer and an XP mini player."
+      content="Seven players rebuilt on the EKO Web audio engine: a drum machine and mixing console, Winamp, an iPod Classic, a 1978 hi-fi, a gapless blind test, a MilkDrop visualizer and an XP mini player."
     />
     <meta property="og:title" content="EKO Web Playground" />
     <meta
       property="og:description"
-      content="Six players you remember, all running the same gapless web audio engine."
+      content="Seven players, one gapless web audio engine underneath."
     />
     <meta
       property="og:image"
@@ -299,6 +299,46 @@
         color: var(--ink-2);
       }
 
+      /* The console: a wide feature tile across the top of the grid. */
+      .grid > li.feature {
+        grid-column: 1 / -1;
+      }
+      .card.feature {
+        display: grid;
+        grid-template-columns: 1.9fr 1fr;
+        align-items: center;
+        gap: 10px 26px;
+        padding: 12px 26px 12px 12px;
+      }
+      .card.feature .shot {
+        aspect-ratio: 1481 / 900;
+      }
+      .card.feature .meta {
+        padding: 0;
+        grid-template-columns: auto 1fr;
+      }
+      .card.feature .name {
+        font-size: 28px;
+        letter-spacing: -0.02em;
+      }
+      .card.feature .go {
+        display: none;
+      }
+      .card.feature .tag {
+        grid-column: 1 / -1;
+        font-size: 15px;
+      }
+      .card.feature .new {
+        grid-column: 1 / -1;
+        justify-self: start;
+        font: 700 10px var(--mono);
+        letter-spacing: 1.6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+
       /* notes */
       .notes {
         display: grid;
@@ -365,8 +405,15 @@
           padding: 36px 16px 30px;
         }
         .grid,
-        .notes {
+        .notes,
+        .card.feature {
           grid-template-columns: 1fr;
+        }
+        .card.feature {
+          padding: 12px 12px 20px;
+        }
+        .card.feature .meta {
+          padding: 6px 8px 0;
         }
         .grid {
           gap: 26px;
@@ -428,7 +475,7 @@
       <div class="crumb">PLAYGROUND</div>
       <h1>Players you remember, running a real engine.</h1>
       <p class="lead">
-        Six players rebuilt on EKO Web: gapless playlists, loudness normalization and a live
+        Seven players rebuilt on EKO Web: gapless playlists, loudness normalization and a live
         analyser under skins you'll recognise. Each one runs the same library you install. Drop in
         your own files and listen to the seams.
       </p>
@@ -438,6 +485,27 @@
       </div>
 
       <ol class="grid">
+        <li class="feature">
+          <a class="card feature" href="./console/">
+            <div class="shot">
+              <img
+                src="./shared/cards/console.jpg"
+                alt="The EKO NB-124 Night Bus console: a drum machine above an eight-channel mixing desk, running"
+              />
+            </div>
+            <div class="meta">
+              <span class="new">NEW</span>
+              <span class="num">07</span>
+              <h3 class="name">Night Bus console</h3>
+              <span class="go">OPEN</span>
+              <p class="tag">
+                A drum machine and an eight-channel desk. Program the Night Bus groove, then mix its
+                stems on faders, each one an EKO engine locked to the beat. Swing, a tape echo and
+                tempo changes that land on the phrase.
+              </p>
+            </div>
+          </a>
+        </li>
         <li>
           <a class="card" href="./winamp/">
             <div class="shot">

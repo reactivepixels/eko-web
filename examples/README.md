@@ -96,6 +96,16 @@ through the engine with loudness normalization on. It uses the library's `media-
 binding, so the keyboard's media keys control it and the lock screen shows the track. Drop
 files anywhere or open My Music; press Play with nothing loaded for the Ember Set.
 
+**EKO NB-124 Night Bus console (`playground/console/`)** is a drum machine above an
+eight-channel mixing desk. The rhythm composer synthesizes its kick, clap, hats and bass on
+the context clock from a 16-step pattern (pattern A is the Night Bus groove, with swing and
+four patterns that switch on the bar). Channels 5 to 8 are the set's stems, rendered as
+eight-bar loops at the console's tempo and played by four EKO engines: each one's
+`destination` is its channel strip, each loops on repeat-one with gapless joins, and all
+four start with `play({ at })` on the drum machine's downbeat. A tempo change lands on the
+next phrase, with a fresh set of engines at the new tempo starting on the same sample. Every
+strip has trim, three-band EQ, a tape-echo send, pan, mute, solo, meter and fader.
+
 In all of them, the pure parts (layout maths, the audio chains, meters, file handling) have unit
 tests next to them as `*.test.js`, which `pnpm test` picks up.
 
