@@ -111,6 +111,7 @@ class FakeEngine {
   previous = vi.fn();
   seek = vi.fn();
   skipTo = vi.fn();
+  state = "idle";
   private _duration = 0;
   private _currentTime = 0;
   private listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -148,8 +149,22 @@ class FakeEngine {
     for (const set of this.listeners.values()) total += set.size;
     return total;
   }
+  private snapshotTrack: EkoTrack | null = null;
+  private subscribers = new Set<() => void>();
   getSnapshot(): { track: EkoTrack | null } {
-    return { track: null };
+    return { track: this.snapshotTrack };
+  }
+  subscribe(fn: () => void): () => void {
+    this.subscribers.add(fn);
+    return () => this.subscribers.delete(fn);
+  }
+  /** What setQueue() does: the current track changes and subscribers hear about it. */
+  setCurrentTrack(track: EkoTrack | null): void {
+    this.snapshotTrack = track;
+    for (const fn of this.subscribers) fn();
+  }
+  subscriberCount(): number {
+    return this.subscribers.size;
   }
 }
 
@@ -315,6 +330,76 @@ describe("attachMediaSession: metadata", () => {
     expect(session.metadata).toBeNull(); // never touched
     session.call("nexttrack"); // transport controls: the more valuable half, per the amendment
     expect(engine.next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("attachMediaSession: stopping without a pause", () => {
+  it("shows paused when the queue runs out, and Play after that starts the queue over", () => {
+    const engine = new FakeEngine();
+    const session = installStubMediaSession();
+    attachMediaSession(asEngine(engine));
+    engine.emit("play", undefined);
+    engine.state = "ended";
+    engine.emit("ended", undefined);
+    expect(session.playbackState).toBe("paused");
+    session.call("play");
+    expect(engine.skipTo).toHaveBeenCalledWith(0);
+    expect(engine.play).toHaveBeenCalled();
+  });
+
+  it("shows paused when the browser blocks playback", () => {
+    const engine = new FakeEngine();
+    const session = installStubMediaSession();
+    attachMediaSession(asEngine(engine));
+    engine.emit("play", undefined);
+    engine.emit("error", { error: { code: "autoplay_blocked" } });
+    expect(session.playbackState).toBe("paused");
+  });
+
+  it("detach clears the title and play state it set", () => {
+    const engine = new FakeEngine();
+    const session = installStubMediaSession();
+    installFakeMediaMetadata();
+    const detach = attachMediaSession(asEngine(engine), { metadata: (t) => ({ title: t.src }) });
+    engine.setCurrentTrack({ src: "/a.flac" });
+    engine.emit("play", undefined);
+    detach();
+    expect(session.metadata).toBeNull();
+    expect(session.playbackState).toBe("none");
+  });
+});
+
+describe("attachMediaSession: a new queue after attaching", () => {
+  it("shows the first track of a queue set after attach, with no trackchange for it", () => {
+    const engine = new FakeEngine();
+    const session = installStubMediaSession();
+    installFakeMediaMetadata();
+    attachMediaSession(asEngine(engine), { metadata: (t) => ({ title: t.src }) });
+
+    engine.setCurrentTrack({ src: "/first.flac" });
+
+    expect((session.metadata as unknown as { title: string }).title).toBe("/first.flac");
+  });
+
+  it("replaces the previous playlist's track when the queue is replaced", () => {
+    const engine = new FakeEngine();
+    const session = installStubMediaSession();
+    installFakeMediaMetadata();
+    attachMediaSession(asEngine(engine), { metadata: (t) => ({ title: t.src }) });
+    engine.emit("trackchange", { index: 3, track: { src: "/old.flac" }, transition: "gapless" });
+
+    engine.setCurrentTrack({ src: "/new.flac" });
+
+    expect((session.metadata as unknown as { title: string }).title).toBe("/new.flac");
+  });
+
+  it("detach stops following the snapshot", () => {
+    const engine = new FakeEngine();
+    installStubMediaSession();
+    const detach = attachMediaSession(asEngine(engine));
+    expect(engine.subscriberCount()).toBe(1);
+    detach();
+    expect(engine.subscriberCount()).toBe(0);
   });
 });
 

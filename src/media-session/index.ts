@@ -102,6 +102,9 @@ export function attachMediaSession(
     // The engine already emits its own 'error' event for that; this handler must not
     // invent a second report, only make sure the rejection is not left unhandled (`void`
     // alone would NOT do that: it discards the return value but attaches no handler).
+    // After the queue has run out, the position sits at the very end: a lock-screen Play
+    // would start and end on the same instant. Start the queue over instead.
+    if (engine.state === "ended") engine.skipTo(0);
     engine.play().catch(() => {});
   });
   setAction("pause", () => engine.pause());
@@ -119,8 +122,12 @@ export function attachMediaSession(
     engine.seek(clamp(engine.currentTime + offset, 0, engine.duration));
   });
 
+  /** The track the lock screen was last given, so a repeat notification is a no-op. */
+  let shown: EkoTrack | null = null;
+
   function updateMetadata(track: EkoTrack | null): void {
     if (!track) return;
+    shown = track;
     // `navigator.mediaSession` and the `MediaMetadata` constructor are separate features:
     // feature-detect it too. If it's missing, skip metadata rather than lose the transport
     // controls registered above over an unrelated constructor; those are the more valuable
@@ -145,6 +152,15 @@ export function attachMediaSession(
   // for it. Without this, the lock screen keeps showing the track that was current when
   // the queue started, for as long as gapless boundaries keep happening.
   unsubscribers.push(engine.on("trackchange", (payload) => updateMetadata(payload.track)));
+  // `setQueue()` after attaching (a new playlist) changes the current track without a
+  // boundary, so no `trackchange` fires for its first track. Follow the snapshot too, or the
+  // lock screen stays blank, or shows the previous playlist's song, until the next boundary.
+  unsubscribers.push(
+    engine.subscribe(() => {
+      const track = engine.getSnapshot().track;
+      if (track && track !== shown) updateMetadata(track);
+    }),
+  );
   unsubscribers.push(
     engine.on("play", () => {
       mediaSession.playbackState = "playing";
@@ -153,6 +169,20 @@ export function attachMediaSession(
   unsubscribers.push(
     engine.on("pause", () => {
       mediaSession.playbackState = "paused";
+    }),
+  );
+  // The queue running out, or the browser refusing to start, stops playback without a
+  // "pause" event. Without these the OS keeps showing a Pause button over silence.
+  unsubscribers.push(
+    engine.on("ended", () => {
+      mediaSession.playbackState = "paused";
+    }),
+  );
+  unsubscribers.push(
+    engine.on("error", ({ error }) => {
+      if (error.code === "autoplay_blocked" || engine.state === "error") {
+        mediaSession.playbackState = "paused";
+      }
     }),
   );
   unsubscribers.push(
@@ -188,5 +218,12 @@ export function attachMediaSession(
     registeredActions.length = 0;
     for (const off of unsubscribers) off();
     unsubscribers.length = 0;
+    // Leave the OS as this found it: no stale title or play state after the player goes.
+    try {
+      mediaSession.metadata = null;
+      mediaSession.playbackState = "none";
+    } catch {
+      // Not worth failing detach over.
+    }
   };
 }
