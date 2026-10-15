@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Caveat:wght@500;600&family=Geist+Mono:wght@400..600&family=Instrument+Serif:ital@0;1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Caveat:wght@500;600&family=Geist+Mono:wght@400..600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="../shared/playground.css" />
@@ -19,8 +19,6 @@
   </head>
   <body>
     <main class="room">
-      <h1 class="headline">EKO <i>hi-fi</i> 1978</h1>
-
       <div class="scene">
         <div class="scroller">
           <div class="stage" id="stage">
@@ -102,8 +100,8 @@
                 <svg
                   class="ticks"
                   style="left: 555px; top: 30px"
-                  width="38"
-                  height="38"
+                  width="30"
+                  height="30"
                   data-ticks="3"
                   data-span="45"
                 ></svg>
@@ -124,8 +122,6 @@
                   CrO2
                 </div>
                 <div class="lg c dim" style="left: 569px; top: 15px; font-size: 4.2px">Met</div>
-
-                <div class="led red" style="left: 330px; top: 58px" data-led="rec"></div>
                 <div class="keys" role="group" aria-label="Transport">
                   <button class="key" data-key="rec" aria-label="Record">
                     <span class="sym rec"></span>
@@ -292,8 +288,8 @@
                 <svg
                   class="ticks"
                   style="left: 122px; top: 156px"
-                  width="48"
-                  height="48"
+                  width="38"
+                  height="38"
                   data-ticks="3"
                   data-span="70"
                 ></svg>
@@ -313,8 +309,8 @@
                 <svg
                   class="ticks"
                   style="left: 170px; top: 156px"
-                  width="50"
-                  height="50"
+                  width="42"
+                  height="42"
                   data-ticks="11"
                   data-span="135"
                 ></svg>
@@ -331,8 +327,8 @@
                 <svg
                   class="ticks"
                   style="left: 214px; top: 156px"
-                  width="50"
-                  height="50"
+                  width="42"
+                  height="42"
                   data-ticks="11"
                   data-span="135"
                 ></svg>
@@ -349,8 +345,8 @@
                 <svg
                   class="ticks"
                   style="left: 258px; top: 156px"
-                  width="50"
-                  height="50"
+                  width="42"
+                  height="42"
                   data-ticks="11"
                   data-span="135"
                 ></svg>
@@ -380,8 +376,8 @@
                 <svg
                   class="ticks"
                   style="left: 420px; top: 156px"
-                  width="50"
-                  height="50"
+                  width="42"
+                  height="42"
                   data-ticks="4"
                   data-span="90"
                 ></svg>
@@ -398,8 +394,8 @@
                 <svg
                   class="ticks"
                   style="left: 530px; top: 162px"
-                  width="56"
-                  height="56"
+                  width="46"
+                  height="46"
                   data-ticks="4"
                   data-span="60"
                 ></svg>
@@ -428,22 +424,11 @@
             </div>
           </div>
         </div>
-
-        <aside class="jcard" aria-label="Cassette inlay card">
-          <div class="jcard-band"><b>EKO</b> C-60 <span>Low Noise</span></div>
-          <div class="jcard-side">Side A</div>
-          <ol class="jcard-list" id="tracklist"></ol>
-          <p class="jcard-empty" id="jcardEmpty">
-            Blank tape. Drop audio files anywhere, press EJECT to choose some, or just press PLAY.
-          </p>
-          <div class="jcard-take" id="take" hidden>
-            <span class="jcard-take-label">Recorded off the amp</span>
-            <a id="takeLink" download>Download the take</a>
-          </div>
-          <p class="jcard-note">Every control is live. Try DOLBY NR, INPUT and TAPE MON.</p>
-        </aside>
       </div>
       <p class="status" id="status" role="status" aria-live="polite"></p>
+      <p class="take" id="take" hidden>
+        Recorded off the amp: <a id="takeLink" download>Download the take</a>
+      </p>
     </main>
 
     <nav class="pg-bar" aria-label="Playground">

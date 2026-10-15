@@ -1,21 +1,25 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EKO Playground</title>
+    <link rel="icon" type="image/svg+xml" href="/eko-web/assets/icon.svg" />
+    <title>EKO Web Playground</title>
     <meta
       name="description"
-      content="Audio players you remember, rebuilt on the EKO Web engine. Every one runs the real thing."
+      content="Six players you remember, rebuilt on the EKO Web audio engine: Winamp, an iPod Classic, a 1978 hi-fi, a gapless blind test, a MilkDrop visualizer and an XP mini player."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Doto:wght@400..900&family=Geist+Mono:wght@400..700&family=Instrument+Serif:ital@0;1&display=swap"
-      rel="stylesheet"
+    <meta property="og:title" content="EKO Web Playground" />
+    <meta
+      property="og:description"
+      content="Six players you remember, all running the same gapless web audio engine."
     />
-    <link rel="stylesheet" href="./shared/playground.css" />
+    <meta
+      property="og:image"
+      content="https://www.reactivepixels.com/eko-web/playground/shared/cards/hifi.jpg"
+    />
     <style>
+      /* The EKO Web site's own tokens, so the Playground reads as part of it. */
       :root {
         --bg: #e9e7e0;
         --light: #ffffff;
@@ -24,109 +28,231 @@
         --ink-2: #6f6e67;
         --ink-3: #9b9a92;
         --accent: #ef6a1e;
-        --out: 6px 6px 14px var(--dark), -6px -6px 14px var(--light);
-        --out-sm: 3px 3px 7px var(--dark), -3px -3px 7px var(--light);
-        --in: inset 5px 5px 12px var(--dark), inset -5px -5px 12px var(--light);
-        --in-sm: inset 2px 2px 5px var(--dark), inset -2px -2px 5px var(--light);
-        --serif: "Instrument Serif", Georgia, serif;
-        --sans: "Archivo", "Helvetica Neue", Helvetica, sans-serif;
-        --mono: "Geist Mono", ui-monospace, Menlo, monospace;
-        --dot: "Doto", "Geist Mono", monospace;
-        --ease: cubic-bezier(0.34, 0.01, 0.2, 1);
+        --accent-ink: #fffaf6;
+        --line: rgba(0, 0, 0, 0.06);
+        --out-sm: 4px 4px 9px var(--dark), -4px -4px 9px var(--light);
+        --out-md: 8px 8px 18px var(--dark), -8px -8px 18px var(--light);
+        --out-xs: 2px 2px 5px var(--dark), -2px -2px 5px var(--light);
+        --in: inset 4px 4px 9px var(--dark), inset -4px -4px 9px var(--light);
+        --bevel:
+          inset 1px 1px 1.5px rgba(255, 255, 255, 0.65), inset -1px -1px 1.5px rgba(0, 0, 0, 0.05);
+        --hover: rgba(0, 0, 0, 0.05);
+        --ec: cubic-bezier(0.34, 0.01, 0.2, 1);
+        --font: "Helvetica Neue", "Inter", -apple-system, Helvetica, Arial, sans-serif;
+        --mono: "SF Mono", ui-monospace, "Roboto Mono", Menlo, monospace;
+      }
+      [data-theme="dark"] {
+        --bg: #23262c;
+        --light: #2f333b;
+        --dark: #141519;
+        --ink: #eceef0;
+        --ink-2: #a3a6ad;
+        --ink-3: #70737a;
+        --line: rgba(255, 255, 255, 0.055);
+        --out-sm: 3px 3px 7px var(--dark), -2px -2px 6px var(--light);
+        --out-md: 7px 7px 16px var(--dark), -4px -4px 12px var(--light);
+        --out-xs: 2px 2px 5px var(--dark), -2px -2px 4px var(--light);
+        --in: inset 4px 4px 9px var(--dark), inset -3px -3px 8px var(--light);
+        --bevel:
+          inset 1px 1px 1px rgba(255, 255, 255, 0.05), inset -1px -1px 1px rgba(0, 0, 0, 0.3);
+        --hover: rgba(255, 255, 255, 0.06);
       }
       * {
         box-sizing: border-box;
-      }
-      html,
-      body {
         margin: 0;
-      }
-      body {
-        background: var(--bg);
-        color: var(--ink);
-        font: 15px/1.55 var(--sans);
-        -webkit-font-smoothing: antialiased;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      }
-      .wrap {
-        max-width: 1280px;
-        margin: 0 auto;
-        padding: 40px 36px 72px;
-      }
-      .kicker {
-        font: 500 11px/1 var(--mono);
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--ink-2);
-        display: flex;
-        gap: 10px;
-        align-items: center;
-      }
-      .led {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--accent);
-        box-shadow:
-          0 0 0 2px rgba(239, 106, 30, 0.15),
-          0 0 8px var(--accent);
-      }
-      .mast {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 360px;
-        gap: 40px;
-        align-items: end;
-        padding-bottom: 28px;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-      }
-      h1 {
-        font: 400 clamp(48px, 7vw, 84px) / 0.92 var(--serif);
-        letter-spacing: -0.015em;
-        margin: 16px 0 0;
-      }
-      h1 em {
-        color: var(--accent);
-      }
-      .intro {
-        margin: 0;
-        color: var(--ink-2);
-        font-size: 15px;
-      }
-      .intro b {
-        color: var(--ink);
-        font-weight: 600;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 32px 28px;
-        margin-top: 36px;
         padding: 0;
-        list-style: none;
       }
-      .card {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--font);
+        color: var(--ink);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+        transition: background 0.3s;
+      }
+      a {
         color: inherit;
         text-decoration: none;
       }
-      .bay {
-        border-radius: 22px;
-        padding: 12px;
+
+      /* header, as on the rest of EKO Web */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 28px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        letter-spacing: 4px;
+        font-size: 15px;
+      }
+      .logo .bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 2.5px;
+        height: 14px;
+      }
+      .logo .bars i {
+        width: 3px;
+        border-radius: 1.5px;
+        background: var(--accent);
+      }
+      .logo .bars i:nth-child(1) {
+        height: 7px;
+      }
+      .logo .bars i:nth-child(2) {
+        height: 14px;
+      }
+      .logo .bars i:nth-child(3) {
+        height: 5px;
+      }
+      .logo .bars i:nth-child(4) {
+        height: 10px;
+      }
+      .logo small {
+        font: 600 9px var(--mono);
+        letter-spacing: 2px;
+        color: var(--ink-3);
+        align-self: flex-start;
+        margin-top: 3px;
+      }
+      header .sp {
+        flex: 1;
+      }
+      header a.h {
+        font-size: 13px;
+        color: var(--ink-2);
+        padding: 8px 14px;
+        border-radius: 999px;
+      }
+      header a.h:hover {
+        color: var(--ink);
+        background: var(--hover);
+      }
+      header a.h[aria-current="page"] {
+        color: var(--ink);
         box-shadow: var(--in);
-        transition: box-shadow 0.3s var(--ease);
+      }
+      .pill {
+        background: var(--bg);
+        box-shadow: var(--out-xs), var(--bevel);
+        border: none;
+        color: var(--ink-2);
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+      .pill svg {
+        width: 16px;
+        height: 16px;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      /* hero */
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 56px 28px 40px;
+      }
+      .crumb {
+        font: 600 11px var(--mono);
+        letter-spacing: 1.5px;
+        color: var(--accent);
+        margin-bottom: 12px;
+      }
+      h1 {
+        font-size: clamp(32px, 5vw, 52px);
+        line-height: 1.08;
+        letter-spacing: -0.025em;
+        margin-bottom: 18px;
+        max-width: 760px;
+      }
+      .lead {
+        max-width: 640px;
+        font-size: 17px;
+        line-height: 1.6;
+        color: var(--ink-2);
+      }
+      .cta-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 26px 0 0;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: 700 13px var(--font);
+        padding: 12px 20px;
+        border-radius: 999px;
+        background: var(--bg);
+        box-shadow: var(--out-sm), var(--bevel);
+        color: var(--ink);
+        transition: transform 0.15s var(--ec);
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+
+      /* the six players */
+      .grid {
+        list-style: none;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 34px 30px;
+        margin-top: 56px;
+      }
+      /* Every tile in a row is as tall as the tallest, whatever its blurb's length. */
+      .grid > li {
+        display: flex;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        padding: 12px 12px 20px;
+        border-radius: 24px;
+        background: var(--bg);
+        box-shadow: var(--out-md), var(--bevel);
+        transition:
+          transform 0.25s var(--ec),
+          box-shadow 0.25s var(--ec);
+      }
+      .card:hover {
+        transform: translateY(-3px);
+      }
+      .card:focus-visible {
+        outline-offset: 6px;
       }
       .shot {
         position: relative;
-        border-radius: 13px;
-        overflow: hidden;
         aspect-ratio: 760 / 560;
-        background: #1b1b1f;
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.7),
-          0 0 0 1px rgba(0, 0, 0, 0.08);
+        border-radius: 16px;
+        overflow: hidden;
+        background: #141519;
+        box-shadow: var(--in);
       }
       .shot img {
         position: absolute;
@@ -134,148 +260,193 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
-        transition:
-          transform 0.6s var(--ease),
-          filter 0.4s var(--ease);
+        transition: transform 0.6s var(--ec);
       }
-      .card.next .shot img {
-        filter: saturate(0.55) brightness(0.92);
-      }
-      .card.live:hover .shot img,
-      .card.live:focus-visible .shot img {
-        transform: scale(1.025);
-      }
-      .card.live:focus-visible {
-        outline: none;
-      }
-      .card.live:focus-visible .bay {
-        box-shadow:
-          var(--in),
-          0 0 0 3px var(--accent);
+      .card:hover .shot img,
+      .card:focus-visible .shot img {
+        transform: scale(1.03);
       }
       .meta {
         display: grid;
         grid-template-columns: auto 1fr auto;
-        gap: 4px 14px;
         align-items: baseline;
-        padding: 0 6px;
+        gap: 4px 12px;
+        padding: 18px 8px 0;
       }
       .num {
-        font: 800 26px/1 var(--dot);
-        color: var(--ink-3);
-        grid-row: span 2;
-        align-self: start;
-        padding-top: 4px;
-      }
-      .live .num {
+        font: 600 11px var(--mono);
+        letter-spacing: 1.5px;
         color: var(--accent);
       }
       .name {
-        font: 400 29px/1.05 var(--serif);
-        margin: 0;
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .go {
+        font: 600 10px var(--mono);
+        letter-spacing: 1.6px;
+        color: var(--ink-3);
+        transition: color 0.2s;
+      }
+      .card:hover .go {
+        color: var(--accent);
       }
       .tag {
         grid-column: 2 / 4;
-        margin: 0;
-        color: var(--ink-2);
         font-size: 14px;
-        line-height: 1.5;
-      }
-      .chip {
-        font: 600 10.5px/1 var(--mono);
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        padding: 8px 11px;
-        border-radius: 9px;
-        white-space: nowrap;
-      }
-      .live .chip {
-        background: linear-gradient(#f47a33, #e2601a);
-        color: #fff8f2;
-        box-shadow:
-          var(--out-sm),
-          inset 0 1px 0 rgba(255, 255, 255, 0.3);
-      }
-      .next .chip {
-        color: var(--ink-3);
-        box-shadow: var(--in-sm);
-      }
-      .foot {
-        margin-top: 56px;
-        padding-top: 24px;
-        border-top: 1px solid rgba(0, 0, 0, 0.08);
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 28px;
+        line-height: 1.55;
         color: var(--ink-2);
-        font-size: 13.5px;
       }
-      .foot h2 {
-        font: 500 10.5px/1 var(--mono);
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
+
+      /* notes */
+      .notes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+        margin-top: 80px;
+        padding-top: 28px;
+        border-top: 1px solid var(--line);
+      }
+      .notes h2 {
+        font: 700 9.5px var(--mono);
+        letter-spacing: 2px;
         color: var(--ink-3);
-        margin: 0 0 10px;
+        margin-bottom: 10px;
+        text-transform: uppercase;
       }
-      .foot p {
-        margin: 0;
+      .notes p {
+        font-size: 14px;
+        line-height: 1.65;
+        color: var(--ink-2);
       }
-      .foot code {
-        font: 500 12px var(--mono);
+      .notes p b {
         color: var(--ink);
-        background: rgba(0, 0, 0, 0.05);
-        padding: 1px 6px;
-        border-radius: 5px;
+        font-weight: 600;
       }
-      .foot a {
+      .notes a {
+        color: var(--ink);
+        text-decoration: underline;
+        text-decoration-color: var(--accent);
+        text-underline-offset: 3px;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: var(--bg);
+        box-shadow: var(--in);
+        padding: 2px 7px;
+        border-radius: 6px;
         color: var(--ink);
       }
-      @media (max-width: 1080px) {
+      footer {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 30px 28px 60px;
+        font: 600 10px var(--mono);
+        letter-spacing: 1.5px;
+        color: var(--ink-3);
+      }
+
+      @media (max-width: 980px) {
         .grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .mast {
-          grid-template-columns: 1fr;
-          gap: 18px;
+          grid-template-columns: repeat(2, 1fr);
         }
       }
-      @media (max-width: 680px) {
-        .wrap {
-          padding: 28px 16px 56px;
+      @media (max-width: 640px) {
+        header {
+          padding: 12px 16px;
+          gap: 6px;
+        }
+        header a.h.opt {
+          display: none;
+        }
+        main {
+          padding: 36px 16px 30px;
         }
         .grid,
-        .foot {
+        .notes {
           grid-template-columns: 1fr;
+        }
+        .grid {
+          gap: 26px;
+          margin-top: 40px;
+        }
+        .notes {
+          gap: 22px;
+          margin-top: 56px;
+        }
+        footer {
+          padding: 24px 16px 48px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .card,
+        .shot img,
+        .btn {
+          transition: none;
         }
       }
     </style>
+    <script>
+      // Follow the system on a first visit, and remember a choice after that: the same
+      // setting as the rest of EKO Web.
+      (function () {
+        let saved = null;
+        try {
+          saved = localStorage.getItem("eko-theme");
+        } catch {}
+        const dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+      })();
+    </script>
   </head>
   <body>
-    <div class="wrap">
-      <header class="mast">
-        <div>
-          <div class="kicker"><span class="led"></span>EKO Web &nbsp;/&nbsp; Playground</div>
-          <h1>Players you remember, <em>running a real engine.</em></h1>
-        </div>
-        <p class="intro">
-          Each one is a full player built on <b>@rpxl/eko-web</b>: gapless playlists, loudness
-          normalization and a live analyser, under a skin you'll recognise. Drop in your own files
-          and listen to the seams.
-        </p>
-      </header>
+    <header>
+      <a href="/eko-web/" class="logo"
+        ><span class="bars"><i></i><i></i><i></i><i></i></span>EKO <small>WEB</small></a
+      >
+      <div class="sp"></div>
+      <a class="h" href="/eko-web/docs">Docs</a>
+      <a class="h" href="/eko-web/playground/" aria-current="page">Playground</a>
+      <a class="h opt" href="/eko/">EKO for Mac</a>
+      <a class="h opt" href="https://github.com/reactivepixels/eko-web">GitHub</a>
+      <button class="pill" id="theme" title="Theme" aria-label="Switch light or dark">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <path d="M12 3a6.4 6.4 0 0 0 9 9 9 9 0 1 1-9-9z" />
+        </svg>
+      </button>
+    </header>
+
+    <main>
+      <div class="crumb">PLAYGROUND</div>
+      <h1>Players you remember, running a real engine.</h1>
+      <p class="lead">
+        Six players rebuilt on EKO Web: gapless playlists, loudness normalization and a live
+        analyser under skins you'll recognise. Each one runs the same library you install. Drop in
+        your own files and listen to the seams.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary" href="./gapless/">Take the blind test</a>
+        <a class="btn" href="/eko-web/docs">Read the docs</a>
+      </div>
 
       <ol class="grid">
         <li>
-          <a class="card live" href="./winamp/">
-            <div class="bay">
-              <div class="shot">
-                <img src="./shared/cards/winamp.png" alt="EKO-AMP, a Winamp 2.x clone, playing" />
-              </div>
+          <a class="card" href="./winamp/">
+            <div class="shot">
+              <img src="./shared/cards/winamp.png" alt="EKO-AMP, a Winamp 2.x clone, playing" />
             </div>
             <div class="meta">
               <span class="num">01</span>
               <h3 class="name">EKO-AMP</h3>
-              <span class="chip">Open</span>
+              <span class="go">OPEN</span>
               <p class="tag">
                 Winamp 2.x, pixel for pixel. Drag the windows, ride the 10-band EQ, drop in an
                 album.
@@ -284,34 +455,37 @@
           </a>
         </li>
         <li>
-          <div class="card next">
-            <div class="bay">
-              <div class="shot">
-                <img src="./shared/cards/ipod.jpg" alt="Concept: an iPod Classic style player" />
-              </div>
+          <a class="card" href="./ipod/">
+            <div class="shot">
+              <img
+                src="./shared/cards/ipod.jpg"
+                alt="EKO Classic, a click-wheel player, on Now Playing"
+                loading="lazy"
+              />
             </div>
             <div class="meta">
               <span class="num">02</span>
               <h3 class="name">iPod Classic</h3>
-              <span class="chip">Next up</span>
-              <p class="tag">A click wheel you actually spin to scrub and set the volume.</p>
+              <span class="go">OPEN</span>
+              <p class="tag">
+                A click wheel you actually spin: browse, scrub and set the volume by turning it.
+              </p>
             </div>
-          </div>
+          </a>
         </li>
         <li>
-          <a class="card live" href="./hifi/">
-            <div class="bay">
-              <div class="shot">
-                <img
-                  src="./shared/cards/hifi.jpg"
-                  alt="EKO hi-fi 1978, a cassette deck, graphic EQ and amplifier stack, playing"
-                />
-              </div>
+          <a class="card" href="./hifi/">
+            <div class="shot">
+              <img
+                src="./shared/cards/hifi.jpg"
+                alt="EKO hi-fi 1978, a cassette deck, graphic EQ and amplifier stack, playing"
+                loading="lazy"
+              />
             </div>
             <div class="meta">
               <span class="num">03</span>
               <h3 class="name">Hi-fi 1978</h3>
-              <span class="chip">Open</span>
+              <span class="go">OPEN</span>
               <p class="tag">
                 Cassette deck, graphic EQ and amp. VU needles, tape hiss on demand, and every knob
                 is live.
@@ -320,19 +494,18 @@
           </a>
         </li>
         <li>
-          <a class="card live" href="./gapless/">
-            <div class="bay">
-              <div class="shot">
-                <img
-                  src="./shared/cards/gapless.jpg"
-                  alt="The GT-1 gapless blind test, revealing a 3.1 ms gap from a bare audio tag"
-                />
-              </div>
+          <a class="card" href="./gapless/">
+            <div class="shot">
+              <img
+                src="./shared/cards/gapless.jpg"
+                alt="The GT-1 gapless blind test, revealing a 3.1 ms gap from a bare audio tag"
+                loading="lazy"
+              />
             </div>
             <div class="meta">
               <span class="num">04</span>
               <h3 class="name">Gapless blind test</h3>
-              <span class="chip">Open</span>
+              <span class="go">OPEN</span>
               <p class="tag">
                 Two players, one track change. Guess which was EKO, then see the seam measured to
                 the sample.
@@ -341,19 +514,18 @@
           </a>
         </li>
         <li>
-          <a class="card live" href="./milkdrop/">
-            <div class="bay">
-              <div class="shot">
-                <img
-                  src="./shared/cards/milkdrop.jpg"
-                  alt="EKO Visuals: an ember tunnel of orange and blue light swirling around the waveform"
-                />
-              </div>
+          <a class="card" href="./milkdrop/">
+            <div class="shot">
+              <img
+                src="./shared/cards/milkdrop.jpg"
+                alt="EKO Visuals: an ember tunnel of orange and blue light swirling around the waveform"
+                loading="lazy"
+              />
             </div>
             <div class="meta">
               <span class="num">05</span>
               <h3 class="name">Visualiser</h3>
-              <span class="chip">Open</span>
+              <span class="go">OPEN</span>
               <p class="tag">
                 MilkDrop-style feedback in WebGL: eight presets that blend on the beat, all driven
                 by the engine's analyser.
@@ -362,45 +534,64 @@
           </a>
         </li>
         <li>
-          <div class="card next">
-            <div class="bay">
-              <div class="shot">
-                <img src="./shared/cards/xp.jpg" alt="Concept: a Windows XP style mini player" />
-              </div>
+          <a class="card" href="./xp/">
+            <div class="shot">
+              <img
+                src="./shared/cards/xp.jpg"
+                alt="EKO Mini Player on a rolling-hills desktop, with a now-playing tray balloon"
+                loading="lazy"
+              />
             </div>
             <div class="meta">
               <span class="num">06</span>
               <h3 class="name">XP mini player</h3>
-              <span class="chip">Soon</span>
-              <p class="tag">A Luna-blue window, a tray balloon and the real OS media keys.</p>
+              <span class="go">OPEN</span>
+              <p class="tag">
+                A Luna-blue window, a tray balloon, and your keyboard's real media keys.
+              </p>
             </div>
-          </div>
+          </a>
         </li>
       </ol>
 
-      <footer class="foot">
+      <section class="notes" aria-label="About the Playground">
         <div>
           <h2>What this is</h2>
           <p>
-            Toys with a point: every player here drives the same engine you install, with no mocks
+            Toys with a point. Every player here drives the same engine you install, with no mocks
             underneath. The skins change; the playback doesn't.
           </p>
         </div>
         <div>
-          <h2>Run it</h2>
+          <h2>Bring your own music</h2>
           <p>
-            From the repo root, <code>npm run harness</code>, then open
-            <code>/examples/playground/</code>. Players import the built <code>dist/</code>.
+            Each player plays a generated set out of the box. Drop audio files on any of them, or
+            open some, and it plays them instead. Nothing is uploaded: the files never leave your
+            browser.
           </p>
         </div>
         <div>
-          <h2>More</h2>
+          <h2>The source</h2>
           <p>
-            The plain reference player is in <a href="../player/">examples/player</a>, and the
-            framework bindings in <a href="../react/">react</a> and <a href="../vue/">vue</a>.
+            Every player is plain HTML and JavaScript, no build step, in
+            <a href="https://github.com/reactivepixels/eko-web/tree/main/examples/playground"
+              >examples/playground</a
+            >. Install the engine with <code>npm install @rpxl/eko-web</code>.
           </p>
         </div>
-      </footer>
-    </div>
+      </section>
+    </main>
+
+    <footer>EKO WEB &middot; OPEN SOURCE, MIT &middot; REACTIVE PIXELS</footer>
+
+    <script>
+      document.getElementById("theme").addEventListener("click", () => {
+        const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+        try {
+          localStorage.setItem("eko-theme", t);
+        } catch {}
+      });
+    </script>
   </body>
 </html>

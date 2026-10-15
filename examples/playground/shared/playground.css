@@ -7,7 +7,7 @@
   --pg-ink-2: #6f6e67;
   --pg-ink-3: #9b9a92;
   --pg-accent: #ef6a1e;
-  --pg-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --pg-mono: "SF Mono", ui-monospace, "Roboto Mono", Menlo, monospace;
 }
 
 .pg-bar {

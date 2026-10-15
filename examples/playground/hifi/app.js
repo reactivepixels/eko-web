@@ -217,7 +217,6 @@ async function loadTape(files, { autoplay = true } = {}) {
   deck.paused = false;
   deck.atEnd = false;
   deck.counterResetAt = 0;
-  tapeVersion += 1;
   engine.setQueue(
     entries.map((e) => e.track),
     0,
@@ -460,7 +459,7 @@ function setRecording(on) {
     recorder?.stop();
     recorder = null;
     deck.recording = false;
-    say("Take saved to the J-card.");
+    say("Take saved: the download link is below the stack.");
   }
   renderRec();
 }
@@ -740,43 +739,9 @@ const fmt = (sec) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-let tapeVersion = 0;
-let listVersion = -1;
-
-/**
- * The J-card's buttons are built once per tape. A track change only moves the highlight, so
- * a keyboard or screen reader user keeps their place in the list.
- */
+/** The cassette in the window: loaded or not, and the current song on its label. */
 function renderTape() {
   $("#bay").classList.toggle("loaded", deck.loaded);
-  const list = $("#tracklist");
-  const now = deck.loaded ? engine.currentIndex : -1;
-  if (listVersion !== tapeVersion) {
-    listVersion = tapeVersion;
-    list.innerHTML = "";
-    deck.entries.forEach((entry, i) => {
-      const li = document.createElement("li");
-      const b = document.createElement("button");
-      b.type = "button";
-      b.innerHTML = `<span class="n">${i + 1}.</span><span class="t"></span><span class="d">${fmt(entry.durationSec)}</span>`;
-      b.querySelector(".t").textContent = entry.title;
-      b.addEventListener("click", () => {
-        engine.context.resume().catch(() => {});
-        if (!deck.loaded) closeDoor();
-        deck.atEnd = false;
-        engine.skipTo(i);
-        play();
-      });
-      li.append(b);
-      list.append(li);
-    });
-  }
-  [...list.querySelectorAll("button")].forEach((b, i) => {
-    b.classList.toggle("now", i === now);
-    if (i === now) b.setAttribute("aria-current", "true");
-    else b.removeAttribute("aria-current");
-  });
-  $("#jcardEmpty").hidden = deck.entries.length > 0;
   const entry = deck.entries[Math.max(0, engine.currentIndex)];
   tapeParts.title.textContent = entry ? entry.title : "";
   tapeParts.type.textContent =
@@ -835,13 +800,10 @@ document.addEventListener("keydown", (e) => {
 /* ------------------------------------------------------------------ fit to the window */
 
 function fit() {
-  const wide = innerWidth >= 1100;
-  const availW = wide ? innerWidth - 272 - 40 - 64 : innerWidth - 32;
-  const availH = innerHeight - 200;
-  // Narrow screens see the whole stack small rather than a slice of it: the J-card below
-  // stays large enough to play from by touch.
-  let s = wide ? Math.min(availW / 592, availH / 480) : availW / 592;
-  s = Math.max(0.5, Math.min(2.4, s));
+  // The stack sits at about 60% of the window, like a real one on a shelf, with room around
+  // it. Narrow screens use the full width instead, so it stays usable by touch.
+  const fill = Math.min((innerWidth - 32) / 592, (innerHeight - 140) / 480);
+  const s = innerWidth >= 700 ? Math.max(0.9, fill * 0.6) : Math.max(0.5, (innerWidth - 32) / 592);
   document.documentElement.style.setProperty("--s", s.toFixed(3));
 }
 addEventListener("resize", fit);
@@ -898,13 +860,15 @@ function drawLadder(lit) {
 }
 
 /** The deck's fluorescent bar meters: 24 segments from -30 to +6 dB, 0 dB at -6 dBFS. */
-function drawDeckMeter(levels) {
+function drawDeckMeter(levels, recLit) {
   const W = deckCanvas.width;
   const H = deckCanvas.height;
   deckCtx.clearRect(0, 0, W, H);
-  const segs = 24;
+  const segs = 22;
   const x0 = 26;
-  const segW = (W - x0 - 10) / segs;
+  // The right end of the display holds the REC indicator, as fluorescent decks did.
+  const recW = 46;
+  const segW = (W - x0 - recW - 10) / segs;
   deckCtx.font = "600 11px Archivo, sans-serif";
   ["L", "R"].forEach((ch, row) => {
     const y = 10 + row * 22;
@@ -922,6 +886,16 @@ function drawDeckMeter(levels) {
       deckCtx.fillRect(x0 + i * segW + 1, y, segW - 3, 12);
     }
   });
+  const rx = W - recW + 2;
+  deckCtx.fillStyle = "rgba(255,150,60,.12)";
+  deckCtx.fillRect(rx - 8, 8, 1, H - 16);
+  deckCtx.font = "700 14px Archivo, sans-serif";
+  deckCtx.textAlign = "center";
+  deckCtx.shadowColor = "rgba(255,50,30,.9)";
+  deckCtx.shadowBlur = recLit ? 8 : 0;
+  deckCtx.fillStyle = recLit ? "rgb(255,70,44)" : "rgba(255,70,44,.12)";
+  deckCtx.fillText("REC", rx + recW / 2 - 6, H / 2 + 5);
+  deckCtx.textAlign = "start";
   deckCtx.shadowBlur = 0;
 }
 
@@ -974,7 +948,7 @@ function frame(now) {
     }
     deckPeak[ch] = db > deckPeak[ch] ? db : Math.max(db, deckPeak[ch] - dt * 24);
   }
-  drawDeckMeter(deckPeak);
+  drawDeckMeter(deckPeak, deck.recording && Math.floor(now / 500) % 2 === 0);
 
   // Spools and counter.
   if (tapeParts) {
@@ -994,9 +968,6 @@ function frame(now) {
     });
   }
 
-  document
-    .querySelector('[data-led="rec"]')
-    .classList.toggle("on", deck.recording && Math.floor(now / 500) % 2 === 0);
   if (a) a.extras.tick(dt);
   requestAnimationFrame(frame);
 }
