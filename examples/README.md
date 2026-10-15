@@ -81,6 +81,21 @@ nothing loaded for a generated 64 second set in four tracks that only sounds con
 playback is gapless. Space changes preset, H cuts, L locks, and Z, X, C, V, B are the
 transport.
 
+**EKO Classic (`playground/ipod/`)** is a click-wheel player. Drag around the wheel to scroll
+the menus (Artists, Albums, Songs, Shuffle Songs, Settings), press the centre to choose, and on
+Now Playing the same wheel sets the volume, or scrubs after a press of the centre. Artist,
+album and title are read from file names (and the folder, when you pick one), each album gets
+a generated sleeve, and choosing a song hands the list it came from to the engine as a gapless
+queue. Out of the box it syncs the generated Ember Set; press Sync or drop files to replace it,
+and slide the hold switch on the top edge to lock it.
+
+**EKO Mini Player (`playground/xp/`)** is a Luna-blue mini player on a rolling-hills desktop,
+with a taskbar, a live clock, a start menu and tray balloons that pop up as each track begins.
+The window drags by its title bar, minimizes into its taskbar button, and plays gapless
+through the engine with loudness normalization on. It uses the library's `media-session`
+binding, so the keyboard's media keys control it and the lock screen shows the track. Drop
+files anywhere or open My Music; press Play with nothing loaded for the Ember Set.
+
 In all of them, the pure parts (layout maths, the audio chains, meters, file handling) have unit
 tests next to them as `*.test.js`, which `pnpm test` picks up.
 
