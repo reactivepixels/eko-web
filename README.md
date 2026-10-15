@@ -5,7 +5,7 @@
 **A web audio engine you build real players with.**
 
 True gapless playback, crossfade, loudness normalization and ReplayGain tags.
-6.6&nbsp;kB gzipped, no runtime dependencies, and no framework of its own.
+About 7&nbsp;kB gzipped, no runtime dependencies, and no framework of its own.
 
 [![npm](https://img.shields.io/npm/v/@rpxl/eko-web?color=ef6a1e&labelColor=2c2b27)](https://www.npmjs.com/package/@rpxl/eko-web)
 [![CI](https://img.shields.io/github/actions/workflow/status/reactivepixels/eko-web/ci.yml?branch=main&labelColor=2c2b27)](https://github.com/reactivepixels/eko-web/actions)
@@ -51,7 +51,7 @@ runtime dependencies, and ships optional React and Vue bindings. The UI is yours
   current one ends, not started from a `setTimeout`.
 - **Loudness is handled.** ReplayGain tags when the file has them, a measured LUFS gain
   when it doesn't.
-- **Small and dependency-free.** About 6.6 kB gzipped for the core. Tag reading, Media
+- **Small and dependency-free.** About 7 kB gzipped for the core. Tag reading, Media
   Session and the framework bindings are separate entry points you only pay for if you
   import them.
 - **Framework-independent.** One engine, with thin React hooks and Vue composables over the
