@@ -3,6 +3,9 @@ import { rampTo, DEFAULT_FADE_SECONDS } from "../src/engine/fades";
 import { EkoWebEngine } from "../src/engine/eko-web-engine";
 import { MockAudioContext, MockParam, makeToneBuffer, stubFetch } from "./mock-audio";
 
+/** The newest entry (the library targets ES2020, so no Array.prototype.at). */
+const last = <T>(items: readonly T[]): T | undefined => items[items.length - 1];
+
 let restore: (() => void) | null = null;
 afterEach(() => {
   restore?.();
@@ -46,8 +49,8 @@ describe("engine fades", () => {
     await engine.play();
 
     const fadeGain = ctx.gains[1]!; // input, fade, user
-    expect(fadeGain.gain.scheduled.at(-1)).toEqual({ value: 0, time: 0 });
-    expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 1, time: DEFAULT_FADE_SECONDS });
+    expect(last(fadeGain.gain.scheduled)).toEqual({ value: 0, time: 0 });
+    expect(last(fadeGain.gain.ramps)).toEqual({ value: 1, time: DEFAULT_FADE_SECONDS });
   });
 
   it("ramps down on pause and stops the source at the end of the ramp", async () => {
@@ -64,7 +67,7 @@ describe("engine fades", () => {
     engine.pause();
 
     const fadeGain = ctx.gains[1]!;
-    expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 0, time: 0.2 + DEFAULT_FADE_SECONDS });
+    expect(last(fadeGain.gain.ramps)).toEqual({ value: 0, time: 0.2 + DEFAULT_FADE_SECONDS });
     expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.2 + DEFAULT_FADE_SECONDS, 6);
     // The reported position is where the user pressed pause, not the end of the ramp.
     expect(engine.currentTime).toBeCloseTo(0.2, 3);
@@ -83,7 +86,7 @@ describe("engine fades", () => {
     await ready;
     await engine.play();
 
-    expect(ctx.gains[1]!.gain.ramps.at(-1)).toEqual({ value: 1, time: 0.05 });
+    expect(last(ctx.gains[1]!.gain.ramps)).toEqual({ value: 1, time: 0.05 });
   });
 
   it("fades across a seek while playing", async () => {
@@ -144,7 +147,7 @@ describe("engine fades", () => {
     // The outgoing source is stopped on the ramp's last sample, the same shape pause()
     // and seek() already use, not cut with no `when` (which would click).
     const fadeGain = ctx.gains[1]!;
-    expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 0, time: 0.15 + DEFAULT_FADE_SECONDS });
+    expect(last(fadeGain.gain.ramps)).toEqual({ value: 0, time: 0.15 + DEFAULT_FADE_SECONDS });
     expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.15 + DEFAULT_FADE_SECONDS, 6);
   });
 
@@ -165,7 +168,7 @@ describe("engine fades", () => {
     // with no `when` (teardown()'s plain stopSource(), which is what destroy() still uses
     // since there is nobody left to hear a fade once the context is closing).
     const fadeGain = ctx.gains[1]!;
-    expect(fadeGain.gain.ramps.at(-1)).toEqual({ value: 0, time: 0.12 + DEFAULT_FADE_SECONDS });
+    expect(last(fadeGain.gain.ramps)).toEqual({ value: 0, time: 0.12 + DEFAULT_FADE_SECONDS });
     expect(ctx.sources[0]!.stopWhen).toBeCloseTo(0.12 + DEFAULT_FADE_SECONDS, 6);
   });
 
