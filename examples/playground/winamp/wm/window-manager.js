@@ -69,8 +69,7 @@ export function createWindowManager({ desktop, windows, onAction, storageKey }) 
     for (const v of views) {
       const r = layout[v.win.id];
       v.el.style.display = r.visible ? "" : "none";
-      v.el.style.left = `${r.x * scale}px`;
-      v.el.style.top = `${r.y * scale}px`;
+      v.el.style.transform = `translate(${r.x * scale}px, ${r.y * scale}px)`;
       v.el.style.zIndex = String(10 + order.indexOf(v.win.id));
     }
   }

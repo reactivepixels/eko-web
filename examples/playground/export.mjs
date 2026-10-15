@@ -2,7 +2,11 @@
 /**
  * Copy the Playground into a static site, self-contained.
  *
- *   npm run build && node examples/playground/export.mjs <out-dir>
+ *   npm run build && node examples/playground/export.mjs <out-dir> [--base /url/of/out-dir/]
+ *
+ * With --base, every page gets a <base href> naming its own folder. Hosts that drop the
+ * trailing slash (a Vercel site with trailingSlash: false serves /playground, not
+ * /playground/) would otherwise resolve the pages' relative links one folder too high.
  *
  * Every player imports the engine from the repo's dist/ (../../../dist/*.js). In the export
  * those imports point at a lib/ folder beside the players instead, holding the browser
@@ -23,10 +27,13 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(here, "../../dist");
-const out = process.argv[2] && resolve(process.argv[2]);
+const args = process.argv.slice(2);
+const baseAt = args.indexOf("--base");
+const base = baseAt >= 0 ? args.splice(baseAt, 2)[1] : null;
+const out = args[0] && resolve(args[0]);
 
 if (!out) {
-  console.error("usage: node examples/playground/export.mjs <out-dir>");
+  console.error("usage: node examples/playground/export.mjs <out-dir> [--base /url/of/out-dir/]");
   process.exit(1);
 }
 if (!existsSync(join(dist, "index.js"))) {
@@ -77,7 +84,12 @@ function rewrite(dir) {
     if (![".js", ".html"].includes(extname(name))) continue;
     const text = readFileSync(file, "utf8");
     const toLib = relative(dirname(file), lib).split(sep).join("/");
-    const next = text.replace(IMPORT, (_, q, mod) => `${q}${toLib}/${mod}${q}`);
+    let next = text.replace(IMPORT, (_, q, mod) => `${q}${toLib}/${mod}${q}`);
+    if (base && extname(name) === ".html") {
+      const folder = relative(out, dirname(file)).split(sep).join("/");
+      const href = `${base.replace(/\/?$/, "/")}${folder ? `${folder}/` : ""}`;
+      next = next.replace(/<head>/i, `<head>\n    <base href="${href}" />`);
+    }
     if (next !== text) {
       writeFileSync(file, next);
       rewritten += 1;

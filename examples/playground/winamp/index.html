@@ -63,10 +63,18 @@
         image-rendering: pixelated;
         shape-rendering: crispEdges;
       }
+      /*
+       * Windows move by transform on their own layer, with a plain box shadow. A CSS filter
+       * shadow on a moving element leaves trails of old frames on the desktop in some
+       * browsers; the windows are rectangles, so a box shadow looks the same.
+       */
       .wa-win {
         position: absolute;
+        left: 0;
+        top: 0;
         touch-action: none;
-        filter: drop-shadow(0 6px 14px rgba(0, 30, 30, 0.45));
+        will-change: transform;
+        box-shadow: 0 6px 14px rgba(0, 30, 30, 0.45);
       }
       .wa-canvas {
         display: block;
