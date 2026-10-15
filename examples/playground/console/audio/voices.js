@@ -29,11 +29,13 @@ export function createVoices(ctx) {
     f.Q.value = q;
     const g = ctx.createGain();
     g.gain.value = 0;
-    src.connect(f).connect(g).connect(out);
+    // A separate stage for chokes, so silencing a hit never disturbs its own envelope.
+    const choke = ctx.createGain();
+    src.connect(f).connect(g).connect(choke).connect(out);
     env(g.gain, t, gain, decay);
     src.start(t, offset);
     src.stop(t + decay + 0.05);
-    return { src, g };
+    return { src, choke };
   };
 
   return {
@@ -65,8 +67,8 @@ export function createVoices(ctx) {
     hat(t, out, open, kit = KIT) {
       // An open hat is choked by the next closed one, as on the real machines.
       if (openHat) {
-        openHat.g.gain.cancelScheduledValues(t);
-        openHat.g.gain.setTargetAtTime(0, t, 0.006);
+        openHat.choke.gain.setValueAtTime(1, t);
+        openHat.choke.gain.setTargetAtTime(0, t, 0.006);
         openHat = null;
       }
       const decay = open ? 0.18 + kit.hatDecay * 0.5 : 0.025 + kit.hatDecay * 0.06;

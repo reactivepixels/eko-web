@@ -23,7 +23,7 @@ import {
   PATTERNS,
   pressStep,
   stepSeconds,
-  stepsBetween,
+  stepTime,
   STEPS,
   VOICES,
 } from "./audio/sequencer.js";
@@ -97,47 +97,75 @@ function applyMix() {
 
 /**
  * A set of four stem engines at one tempo, loaded and waiting. Each engine plays into its
- * own channel strip and loops its stem gaplessly.
+ * own gain stage and on into its channel strip, and loops its stem gaplessly. The gain
+ * stage is the set's: it lets one set fade out on the exact sample the next one starts.
  */
 async function loadStems(bpm) {
   const { ctx, strips } = audio;
   const urls = stemUrls(bpm);
+  const gains = STEMS.map((_, i) => {
+    const g = ctx.createGain();
+    g.connect(strips[4 + i].input);
+    return g;
+  });
   const engines = STEMS.map(
     (_, i) =>
       new EkoWebEngine({
         context: ctx,
-        destination: strips[4 + i].input,
+        destination: gains[i],
         normalize: false,
         transition: "gapless",
         source: "buffer",
       }),
   );
-  await Promise.all(
-    engines.map(
-      (engine, i) =>
-        new Promise((resolve, reject) => {
-          const offReady = engine.on("canplay", () => {
-            offReady();
-            offError();
-            resolve();
-          });
-          const offError = engine.on("error", ({ error }) => {
-            offReady();
-            offError();
-            reject(error);
-          });
-          engine.setRepeat("one");
-          engine.setQueue([{ id: `${STEMS[i].id}-${bpm}`, src: urls[i] }]);
-        }),
-    ),
-  );
-  return { bpm, engines, urls };
+  const set = { bpm, engines, urls, gains };
+  try {
+    await Promise.all(
+      engines.map(
+        (engine, i) =>
+          new Promise((resolve, reject) => {
+            const offReady = engine.on("canplay", () => {
+              offReady();
+              offError();
+              resolve();
+            });
+            const offError = engine.on("error", ({ error }) => {
+              offReady();
+              offError();
+              reject(error);
+            });
+            engine.setRepeat("one");
+            engine.setQueue([{ id: `${STEMS[i].id}-${bpm}`, src: urls[i] }]);
+          }),
+      ),
+    );
+  } catch (err) {
+    dropStems(set);
+    throw err;
+  }
+  return set;
 }
 
 function dropStems(set) {
   if (!set) return;
   for (const e of set.engines) e.destroy();
+  for (const g of set.gains) g.disconnect();
   set.urls.forEach((u) => URL.revokeObjectURL(u));
+}
+
+/** Silence a set from `at`: a 5 ms fade ending exactly on the sample the next set starts. */
+function fadeOutAt(set, at) {
+  for (const g of set.gains) {
+    g.gain.cancelScheduledValues(0);
+    g.gain.setValueAtTime(1, Math.max(audio.ctx.currentTime, at - 0.005));
+    g.gain.linearRampToValueAtTime(0, at);
+  }
+}
+function restoreLevel(set) {
+  for (const g of set.gains) {
+    g.gain.cancelScheduledValues(0);
+    g.gain.value = 1;
+  }
 }
 
 /* ------------------------------------------------------------------ the clock */
@@ -145,8 +173,9 @@ function dropStems(set) {
 const clock = {
   running: false,
   origin: 0,
-  scheduledUntil: 0,
-  /** A tempo change booked for a phrase boundary: { at, bpm }. */
+  /** The next step to schedule, counted from `origin`. */
+  nextIndex: 0,
+  /** A tempo change booked for a phrase boundary: { at, bpm, set }. */
   change: null,
   timer: 0,
   /** Steps scheduled but not yet sounded, for the step cursor. */
@@ -172,36 +201,59 @@ function scheduleStep(step, time) {
   clock.ahead.push({ step, time });
 }
 
+/**
+ * Schedule every step due before the lookahead. Steps are counted, not timed, so moving
+ * the swing knob can never schedule a step twice or skip one. A step whose time has
+ * already passed (a background tab throttles timers to a second or more) is dropped
+ * rather than played late in a pile.
+ */
 function tick() {
-  const { ctx } = audio;
-  const until = ctx.currentTime + LOOKAHEAD;
-  while (clock.scheduledUntil < until) {
+  const now = audio.ctx.currentTime;
+  const until = now + LOOKAHEAD;
+  for (;;) {
     const end = clock.change ? Math.min(until, clock.change.at) : until;
-    for (const s of stepsBetween(clock.origin, clock.scheduledUntil, end, model.bpm, model.swing)) {
+    for (;;) {
+      const t = stepTime(clock.origin, clock.nextIndex, model.bpm, model.swing);
+      if (t >= end) break;
+      const step = clock.nextIndex % STEPS;
       // A queued pattern starts on the downbeat of the next bar.
-      if (s.step === 0 && model.queuedPattern) {
+      if (step === 0 && model.queuedPattern) {
         model.pattern = model.queuedPattern;
         model.queuedPattern = null;
         renderPatternButtons();
         renderPads();
+        say(`Pattern ${model.pattern}.`);
       }
-      scheduleStep(s.step, s.time);
+      if (t >= now - 0.02) scheduleStep(step, t);
+      clock.nextIndex += 1;
     }
-    clock.scheduledUntil = end;
-    if (clock.change && end >= clock.change.at) {
-      clock.origin = clock.change.at;
-      model.bpm = clock.change.bpm;
-      model.pendingBpm = null;
-      clock.change = null;
-      applyMix();
-      renderDisplay();
-    } else {
-      break;
-    }
+    if (!clock.change || end < clock.change.at) break;
+    // The phrase boundary: the booked set takes over on this sample, drums and stems both.
+    const { at, bpm, set } = clock.change;
+    const old = audio.stems;
+    audio.stems = set;
+    clock.origin = at;
+    clock.nextIndex = 0;
+    clock.change = null;
+    model.bpm = bpm;
+    if (model.pendingBpm === bpm) model.pendingBpm = null;
+    setTimeout(() => dropStems(old), Math.max(0, (at - now) * 1000 + 60));
+    applyMix();
+    renderDisplay();
   }
 }
 
+/** Throw away a booked tempo change that has not happened yet. */
+function cancelChange() {
+  const c = clock.change;
+  if (!c) return;
+  clock.change = null;
+  restoreLevel(audio.stems);
+  dropStems(c.set);
+}
+
 let busy = false;
+let startCancelled = false;
 
 async function start() {
   const a = ensureAudio();
@@ -209,6 +261,7 @@ async function start() {
   a.ctx.resume().catch(() => {});
   if (clock.running || busy) return;
   busy = true;
+  startCancelled = false;
   renderDisplay();
   try {
     if (model.pendingBpm) {
@@ -222,11 +275,13 @@ async function start() {
       a.stems = await loadStems(model.bpm);
       dropStems(old);
     }
+    if (startCancelled) return;
     const t0 = a.ctx.currentTime + 0.12;
     clock.origin = t0;
-    clock.scheduledUntil = t0;
+    clock.nextIndex = 0;
     clock.change = null;
     clock.ahead = [];
+    restoreLevel(a.stems);
     for (const e of a.stems.engines) {
       e.seek(0);
       e.play({ at: t0 });
@@ -245,10 +300,13 @@ async function start() {
 }
 
 function stop() {
+  // STOP during the first render cancels the start it is waiting on.
+  if (busy && !clock.running) startCancelled = true;
+  clearTimeout(tempoTimer);
   if (!clock.running) return;
   clearInterval(clock.timer);
   clock.running = false;
-  clock.change = null;
+  cancelChange();
   clock.ahead = [];
   for (const e of audio.stems?.engines ?? []) e.pause();
   if (model.pendingBpm) {
@@ -261,18 +319,28 @@ function stop() {
   say("");
 }
 
-/** Book a tempo change: it takes effect on the next phrase, stems and drums together. */
+/** Ask for a tempo: it takes effect on the next phrase, stems and drums together. */
 let tempoTimer = 0;
 function requestTempo(bpm) {
-  model.pendingBpm = bpm === model.bpm ? null : bpm;
-  renderDisplay();
   clearTimeout(tempoTimer);
-  if (!clock.running || !model.pendingBpm) return;
-  tempoTimer = setTimeout(() => changeTempo(model.pendingBpm), 600);
+  if (bpm === model.bpm) {
+    // Back where it is: cancel anything booked, so what you hear matches the knob.
+    model.pendingBpm = null;
+    if (clock.running) cancelChange();
+    renderDisplay();
+    return;
+  }
+  model.pendingBpm = bpm;
+  renderDisplay();
+  if (clock.running) tempoTimer = setTimeout(() => changeTempo(bpm), 600);
 }
 
 async function changeTempo(bpm) {
-  if (!clock.running || busy || !bpm) return;
+  if (!clock.running || !bpm) return;
+  if (busy) {
+    // A render is already running: it will pick up the newest request when it finishes.
+    return;
+  }
   busy = true;
   const a = audio;
   try {
@@ -282,18 +350,20 @@ async function changeTempo(bpm) {
       dropStems(next);
       return;
     }
+    // A change booked earlier and not yet reached never sounds: replace it outright.
+    cancelChange();
     const at = nextPhrase(clock.origin, a.ctx.currentTime, model.bpm, 0.4);
-    clock.change = { at, bpm };
+    clock.change = { at, bpm, set: next };
     for (const e of next.engines) e.play({ at });
-    const old = a.stems;
-    a.stems = next;
-    // The old set stops as the new one starts: a few milliseconds of fade either side.
-    setTimeout(() => dropStems(old), Math.max(0, (at - a.ctx.currentTime) * 1000 + 30));
+    fadeOutAt(a.stems, at);
     say(`Tempo ${bpm} from the next phrase.`);
   } catch (err) {
     say(`Could not re-render at ${bpm} bpm (${err?.code || err?.name}).`);
   } finally {
     busy = false;
+    // The knob moved again while this rendered: go after the newest request.
+    const want = model.pendingBpm;
+    if (clock.running && want && want !== bpm && want !== model.bpm) changeTempo(want);
   }
 }
 
@@ -523,6 +593,8 @@ function renderPads() {
       pad.classList.toggle("on", Boolean(v));
       pad.setAttribute("aria-pressed", String(Boolean(v)));
       pad.querySelector("b").textContent = voice === "bl" && v ? v : "";
+      const name = pad.dataset.label ?? (pad.dataset.label = pad.getAttribute("aria-label"));
+      pad.setAttribute("aria-label", voice === "bl" && v ? `${name}, note ${v}` : name);
     });
   }
 }
