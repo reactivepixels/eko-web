@@ -364,6 +364,12 @@ export class EkoWebEngine {
     if (!track) return;
     await this.loadIndex(index, track, token, undefined, rampEnd);
     if (token !== this.advanceToken) return;
+    if (this._state === "error") {
+      // The new queue's first track failed. A play() made while it loaded must not fall
+      // through to whatever the previous queue left loaded.
+      this.pendingIntent = null;
+      return;
+    }
     this.resolvePendingIntent();
   }
 
@@ -526,6 +532,13 @@ export class EkoWebEngine {
     if (!this.current) {
       // Nothing loaded and nothing loading either (no setQueue() call has happened yet).
       // There is no in-flight load for an intent to attach to.
+      return;
+    }
+    if (this._state === "error" && this.current.track !== this.tracks.current) {
+      // The queue's current track failed to load, and what is still loaded belongs to a
+      // queue that has since been replaced. Playing it would put the old queue's song under
+      // the new queue's index; there is nothing of this queue to play until a skip or a new
+      // queue loads something.
       return;
     }
     if (!this._paused) return;
@@ -704,6 +717,11 @@ export class EkoWebEngine {
       // would report the failed `index` against a `track` that never changed, and the next
       // previous()/next() press would be one entry off.
       this.tracks.restoreTo(rollbackTo, historyDepth, index);
+      // No boundary was crossed: the track that was current still is. Report nothing, so a
+      // listener (a lock screen, a "now playing" toast) does not announce the failed track.
+      this.publish();
+      this.resolvePendingIntent();
+      return;
     }
     this._lastTransition = "gap";
     this.publish();
@@ -962,7 +980,11 @@ export class EkoWebEngine {
    * every tick cannot turn this into an unbounded chain of fetches; one retry covers the
    * realistic case (a single toggle landing mid-load) and gives up past that.
    */
-  private async advanceWithGap(index: number, retriesLeft = 1): Promise<void> {
+  private async advanceWithGap(
+    index: number,
+    retriesLeft = 1,
+    failuresLeft = this.tracks.length,
+  ): Promise<void> {
     this.stopRaf();
     this._paused = true;
     // An advance always intends to resume once it settles (that is the whole point: the
@@ -982,6 +1004,21 @@ export class EkoWebEngine {
       // Superseded by setQueue(), commitSkip() or destroy() while this was loading. Whichever
       // call superseded it owns the engine's state now; this advance has nothing left to
       // do, not even reporting the boundary, since it never actually reached track `index`.
+      return;
+    }
+    if (this._state === "error" && this.tracks.peekNextIndex() === index) {
+      // The next track would not load (the error is already reported). Step over it and try
+      // the one after, the way a player skips a bad file, rather than replaying the track
+      // that just ended under the failed one's name. Bounded by the queue length, so a
+      // repeat-all queue of nothing but bad files settles instead of spinning.
+      this.tracks.advance();
+      const after = this.tracks.peekNextIndex();
+      if (after >= 0 && failuresLeft > 1) {
+        void this.advanceWithGap(after, retriesLeft, failuresLeft - 1);
+        return;
+      }
+      this.pendingIntent = null;
+      this.publish();
       return;
     }
     // `token` only catches setQueue()/commitSkip()/destroy(); it does not catch something that
