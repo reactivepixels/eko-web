@@ -1,0 +1,955 @@
+/*
+ * EKO Classic. The scene (the player, its cable and the floor) is laid out in the mockup's
+ * units and scaled as one piece; the screen inside renders at its native 320 x 240.
+ */
+:root {
+  --accent: #ef6a1e;
+  --ui: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --s: 1;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  background: #1f1d1b;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--ui);
+  overflow-x: hidden;
+  background:
+    radial-gradient(
+      ellipse 34% 30% at 22% 8%,
+      rgba(255, 196, 150, 0.16),
+      rgba(255, 196, 150, 0) 100%
+    ),
+    radial-gradient(ellipse 70% 70% at 50% 34%, #77716a 0%, #59544e 30%, #3a3632 62%, #1f1d1b 100%);
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .55 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+}
+.room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0 96px;
+}
+.stage {
+  position: relative;
+  width: min(100vw, calc(600px * var(--s)));
+  height: calc(640px * var(--s));
+  overflow: hidden;
+  flex: none;
+}
+.scene {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 600px;
+  height: 660px;
+  margin-left: -300px;
+  transform: scale(var(--s));
+  transform-origin: 50% 0;
+}
+.scene button {
+  font: inherit;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.scene :focus {
+  outline: none;
+}
+.scene :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pointer .scene :focus-visible {
+  outline: none;
+}
+
+/* cable and floor */
+.cable {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 600px;
+  height: 660px;
+  overflow: visible;
+  pointer-events: none;
+}
+.wire-shadow,
+.wire,
+.wire-hi {
+  fill: none;
+  stroke-linecap: round;
+}
+.wire-shadow {
+  stroke: #000;
+  stroke-opacity: 0.32;
+  stroke-width: 3.5;
+  filter: url(#ip-cshadow);
+}
+.wire {
+  stroke: #dcdde0;
+  stroke-width: 3;
+}
+.wire-hi {
+  stroke: #fff;
+  stroke-width: 0.9;
+}
+.floor-shadow {
+  position: absolute;
+  left: 172px;
+  top: 544px;
+  width: 257px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  filter: blur(4px);
+}
+.refl {
+  position: absolute;
+  left: 160px;
+  top: 552px;
+  width: 281px;
+  height: 80px;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(
+    90deg,
+    #5a5d62 0%,
+    #eef0f2 3%,
+    #a3a7ac 9%,
+    #d9dcdf 30%,
+    #f7f8f9 52%,
+    #b2b6bb 74%,
+    #e9ebed 93%,
+    #55585d 100%
+  );
+  opacity: 0.18;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 80%);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 80%);
+}
+
+/* hold switch on the top edge: slide it to lock the controls */
+.hold {
+  position: absolute;
+  left: 390px;
+  top: 75px;
+  width: 30px;
+  height: 7px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, #9ca0a5, #e3e5e7) !important;
+}
+.hold::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1.5px;
+  width: 11px;
+  height: 4px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, #f6f7f8, #b7bbc0);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.3);
+  transition: left 0.15s;
+}
+.hold[aria-pressed="true"]::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 9px;
+  height: 3px;
+  background: var(--accent);
+}
+.hold[aria-pressed="true"]::after {
+  left: 16px;
+}
+
+/* ===== device ===== */
+.pod {
+  position: absolute;
+  left: 160px;
+  top: 80px;
+  width: 281px;
+  height: 470px;
+  border-radius: 24px;
+  background: linear-gradient(
+    90deg,
+    #5a5d62 0%,
+    #eef0f2 3%,
+    #a3a7ac 9%,
+    #d9dcdf 30%,
+    #f7f8f9 52%,
+    #b2b6bb 74%,
+    #e9ebed 93%,
+    #55585d 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 30px 60px -20px rgba(0, 0, 0, 0.6),
+    0 8px 18px -6px rgba(0, 0, 0, 0.5);
+}
+.face {
+  position: absolute;
+  inset: 2.5px;
+  border-radius: 21.5px;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse 120% 70% at 18% 0%,
+      rgba(255, 255, 255, 0.42),
+      rgba(255, 255, 255, 0) 60%
+    ),
+    linear-gradient(180deg, #d6d9dd 0%, #c7cbd0 45%, #b3b8be 100%);
+  box-shadow:
+    0 0 0 0.6px rgba(0, 0, 0, 0.35) inset,
+    0 1.5px 0 rgba(255, 255, 255, 0.8) inset,
+    0 -2px 3px rgba(0, 0, 0, 0.12) inset;
+}
+.face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .78 0 0 0 0 .79 0 0 0 0 .81 0 0 0 .5 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+}
+.face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    118deg,
+    rgba(255, 255, 255, 0) 38%,
+    rgba(255, 255, 255, 0.22) 48%,
+    rgba(255, 255, 255, 0) 60%
+  );
+}
+.rim {
+  position: absolute;
+  right: -1px;
+  top: 16px;
+  bottom: 16px;
+  width: 5px;
+  border-radius: 3px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 236, 214, 0) 0%,
+    rgba(255, 240, 224, 0.95) 30%,
+    rgba(255, 244, 232, 0.9) 62%,
+    rgba(255, 236, 214, 0) 100%
+  );
+  filter: blur(0.6px);
+}
+.rim.l {
+  left: -1px;
+  right: auto;
+  width: 3px;
+  opacity: 0.35;
+}
+.eko-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  text-align: center;
+  font:
+    700 7px/1 "Archivo",
+    sans-serif;
+  font-stretch: 125%;
+  letter-spacing: 0.5em;
+  padding-left: 0.5em;
+  color: #a7abb1;
+  text-shadow: 0 0.6px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* screen window */
+.win {
+  position: absolute;
+  left: 15.5px;
+  top: 28px;
+  width: 245px;
+  height: 196px;
+  border-radius: 7px;
+  background: #0b0c0e;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 0 1.2px rgba(255, 255, 255, 0.55),
+    0 2px 3px 0 rgba(0, 0, 0, 0.25) inset;
+}
+.lcd {
+  position: absolute;
+  left: 7px;
+  top: 11px;
+  width: 231px;
+  height: 173.25px;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 1px;
+  transition: filter 0.8s;
+}
+/* The backlight times out: the screen dims to its unlit grey until you touch something. */
+.lcd.dim {
+  filter: brightness(0.62) contrast(0.92) saturate(0.7);
+}
+.glass {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      152deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0.07) 34%,
+      rgba(255, 255, 255, 0) 34.4%
+    ),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 30%);
+}
+
+/* ===== the screen, at native 320 x 240 ===== */
+.ui {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 320px;
+  height: 240px;
+  transform: scale(0.721875);
+  transform-origin: 0 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fff 0%, #f6f7f8 100%);
+  color: #000;
+  font-family: var(--ui);
+  -webkit-font-smoothing: antialiased;
+}
+.tb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 320px;
+  height: 22px;
+  z-index: 3;
+  background: linear-gradient(180deg, #fdfdfe 0%, #eef0f2 46%, #d9dde2 54%, #cdd2d8 100%);
+  border-bottom: 1px solid #7e868f;
+}
+.tb .t {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  top: 3px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.1px;
+  color: #111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb .state {
+  position: absolute;
+  left: 9px;
+  top: 5.5px;
+  width: 12px;
+  height: 11px;
+}
+.tb .state.play::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-left: 10px solid #2f78d6;
+  border-top: 5.5px solid transparent;
+  border-bottom: 5.5px solid transparent;
+  filter: drop-shadow(0 0.6px 0 rgba(255, 255, 255, 0.9));
+}
+.tb .state.pause::before,
+.tb .state.pause::after {
+  content: "";
+  position: absolute;
+  top: 0.5px;
+  width: 3.5px;
+  height: 10px;
+  background: linear-gradient(180deg, #5b9be6, #2f78d6);
+}
+.tb .state.pause::before {
+  left: 0;
+}
+.tb .state.pause::after {
+  left: 6px;
+}
+.tb .lock {
+  position: absolute;
+  right: 40px;
+  top: 5px;
+  width: 9px;
+  height: 11px;
+}
+.tb .lock::before {
+  content: "";
+  position: absolute;
+  left: 1.5px;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  border: 1.6px solid #4a525b;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+.tb .lock::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 9px;
+  height: 6px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, #ffb070, #ef6a1e);
+}
+.batt {
+  position: absolute;
+  right: 9px;
+  top: 5px;
+  width: 24px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid #4a525b;
+  background: linear-gradient(180deg, #fff, #e2e5e8);
+}
+.batt::before {
+  content: "";
+  position: absolute;
+  right: -3.5px;
+  top: 3px;
+  width: 2.5px;
+  height: 4px;
+  background: #4a525b;
+  border-radius: 0 1px 1px 0;
+}
+.batt i {
+  position: absolute;
+  left: 1.5px;
+  top: 1.5px;
+  bottom: 1.5px;
+  width: 15px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, #b5f08a 0%, #5fc128 50%, #3fa212 51%, #6fd23b 100%);
+}
+
+.panes {
+  position: absolute;
+  left: 0;
+  top: 23px;
+  width: 320px;
+  height: 217px;
+  overflow: hidden;
+}
+.pane {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #fff 0%, #f6f7f8 100%);
+}
+
+/* menu lists */
+.rows {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+}
+.row {
+  position: relative;
+  height: 24px;
+  padding: 0 26px 0 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.15px;
+  color: #000;
+  white-space: nowrap;
+}
+.row .l {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .d {
+  font-weight: 400;
+  color: #555b62;
+}
+.row.chev::after {
+  content: "";
+  position: absolute;
+  right: 11px;
+  top: 7.5px;
+  width: 6px;
+  height: 6px;
+  border-right: 2.4px solid #222;
+  border-top: 2.4px solid #222;
+  transform: rotate(45deg);
+}
+.row.sel {
+  color: #fff;
+  background: linear-gradient(180deg, #7db4f0 0%, #3d8ae0 48%, #2a73d3 52%, #3b88e2 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 -1px 0 rgba(0, 40, 110, 0.35) inset;
+}
+.row.sel .d {
+  color: rgba(255, 255, 255, 0.85);
+}
+.row.sel.chev::after {
+  border-color: #fff;
+}
+.row.quiet {
+  color: #6b7179;
+  font-weight: 400;
+}
+/* split screen: the list on the left, a slowly drifting sleeve on the right */
+.pane.split .rows {
+  right: 160px !important;
+}
+.pane.split .side {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 160px;
+  height: 217px;
+  overflow: hidden;
+  border-left: 1px solid #8a929b;
+  background: #222;
+  box-shadow: inset 6px 0 8px -6px rgba(0, 0, 0, 0.5);
+}
+.pane.split .side svg {
+  display: block;
+  width: 240px;
+  height: 240px;
+  animation: drift 18s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  from {
+    transform: translate(-10px, -12px) scale(1);
+  }
+  to {
+    transform: translate(-70px, -20px) scale(1.06);
+  }
+}
+.scrollbar {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 9px;
+  height: 217px;
+  border-left: 1px solid #8a929b;
+  background: linear-gradient(90deg, #e3e6ea, #fafbfc);
+}
+.scrollbar i {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, #5a9ae4, #2a6fcf);
+}
+
+/* now playing */
+.np .art {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 112px;
+  height: 112px;
+}
+.np .cover,
+.np .reflect {
+  position: absolute;
+  left: 0;
+  width: 112px;
+  height: 112px;
+  overflow: hidden;
+}
+.np .cover {
+  top: 0;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
+}
+.np .cover svg,
+.np .reflect svg {
+  display: block;
+  width: 112px;
+  height: 112px;
+}
+.np .reflect {
+  top: 113px;
+  transform: scaleY(-1);
+  opacity: 0.42;
+  -webkit-mask-image: linear-gradient(0deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 45%);
+  mask-image: linear-gradient(0deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 45%);
+}
+.np .meta {
+  position: absolute;
+  left: 138px;
+  top: 17px;
+  width: 174px;
+}
+.np .meta div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np .n {
+  font-size: 11.5px;
+  color: #6b7179;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.np .ti {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 19px;
+}
+.np .ar,
+.np .al {
+  font-size: 14px;
+  line-height: 19px;
+  color: #1d1f22;
+}
+.np .al {
+  color: #4a4f56;
+}
+.np .bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 173px;
+  height: 10px;
+}
+.np .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 1px;
+  border: 1px solid #6d757e;
+  background: linear-gradient(180deg, #d4d8dd 0%, #f7f8f9 60%, #ffffff 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+}
+.np .fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: linear-gradient(180deg, #9cc6f4 0%, #4f93e2 45%, #2a6fcf 55%, #3f86df 100%);
+}
+.np .diamond {
+  position: absolute;
+  top: -3.5px;
+  width: 15px;
+  height: 15px;
+  margin-left: -7.5px;
+  left: 0;
+  display: none;
+}
+.np .diamond::before {
+  content: "";
+  position: absolute;
+  left: 2.5px;
+  top: 2.5px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #ffffff 0%, #dfe3e8 50%, #9aa3ad 100%);
+  border: 1px solid #5d6670;
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.3);
+}
+.np.scrub .diamond {
+  display: block;
+}
+.np.scrub .fill {
+  background: linear-gradient(180deg, #ffc49a 0%, #f2853f 45%, #e0631d 55%, #ef7a35 100%);
+}
+.np .times {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 189px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #111;
+  display: flex;
+  justify-content: space-between;
+}
+/* The volume bar takes over the progress bar while the wheel turns, as it did. */
+.np .vol {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 168px;
+  height: 22px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.np.vol-on .vol {
+  display: flex;
+}
+.np.vol-on .bar,
+.np.vol-on .times {
+  visibility: hidden;
+}
+.np .spk {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.np .spk::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 4px;
+  height: 6px;
+  background: #3d434a;
+}
+.np .spk::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  border-right: 6px solid #3d434a;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+}
+.np .spk.loud {
+  width: 22px;
+}
+.np .spk.loud i,
+.np .spk.loud i::after {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-right-color: #3d434a;
+}
+.np .spk.loud i {
+  left: 6px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+}
+.np .spk.loud i::after {
+  content: "";
+  left: -1px;
+  top: -5px;
+  width: 16px;
+  height: 16px;
+}
+.np .vtrack {
+  position: relative;
+  flex: 1;
+  height: 10px;
+  border-radius: 1px;
+  border: 1px solid #6d757e;
+  background: linear-gradient(180deg, #d4d8dd 0%, #f7f8f9 60%, #ffffff 100%);
+  overflow: hidden;
+}
+.np .vfill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, #9cc6f4 0%, #4f93e2 45%, #2a6fcf 55%, #3f86df 100%);
+}
+
+/* sync screen and the hold toast */
+.syncing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  font-size: 15px;
+  font-weight: 700;
+}
+.syncing .spin {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 4px solid #d6dae0;
+  border-top-color: #2f78d6;
+  animation: spin 0.9s linear infinite;
+}
+.syncing small {
+  font-weight: 400;
+  font-size: 12.5px;
+  color: #555b62;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.toast {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  top: 82px;
+  z-index: 4;
+  padding: 14px 10px;
+  border-radius: 8px;
+  background: rgba(30, 34, 40, 0.86);
+  color: #fff;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+.toast[hidden] {
+  display: none;
+}
+
+/* ===== click wheel ===== */
+.wheel {
+  position: absolute;
+  left: 45px;
+  top: 251px;
+  width: 186px;
+  height: 186px;
+  touch-action: none;
+}
+.wheel svg {
+  position: absolute;
+  inset: 0;
+  width: 186px;
+  height: 186px;
+  overflow: visible;
+  pointer-events: none;
+}
+.wheel .legend {
+  fill: #a2a7ad;
+  font-family: var(--ui);
+  transition: fill 0.12s;
+}
+.wheel .legend.lit {
+  fill: #7d838a;
+}
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  cursor: grab;
+}
+.ring:active {
+  cursor: grabbing;
+}
+/* The pressable quarters and the centre are real buttons for the keyboard and screen
+   readers; the pointer goes to the ring, which tells presses from turns itself. */
+.zone {
+  position: absolute;
+  width: 40px;
+  height: 30px;
+  pointer-events: none;
+}
+.zone.menu {
+  left: 73px;
+  top: 12px;
+}
+.zone.next {
+  left: 140px;
+  top: 78px;
+}
+.zone.play {
+  left: 73px;
+  top: 146px;
+}
+.zone.prev {
+  left: 6px;
+  top: 78px;
+}
+.zone:focus-visible {
+  border-radius: 8px;
+}
+.center {
+  position: absolute;
+  left: 54.5px;
+  top: 54.5px;
+  width: 77px;
+  height: 77px;
+  border-radius: 50%;
+}
+
+/* ===== below the device ===== */
+.dock {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+  padding: 0 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.sync {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f6f7f8, #d9dce0);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  font:
+    600 12px/1 "Geist Mono",
+    ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2c2b27;
+  cursor: pointer;
+}
+.sync:hover {
+  background: linear-gradient(180deg, #ffffff, #e2e5e8);
+}
+.sync:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.hint {
+  margin: 0;
+  max-width: 560px;
+  font:
+    400 16px/1.35 "Instrument Serif",
+    Georgia,
+    serif;
+  color: rgba(241, 236, 226, 0.75);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane.split .side svg {
+    animation: none;
+  }
+  .syncing .spin {
+    animation-duration: 3s;
+  }
+}

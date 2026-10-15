@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EKO Mini Player</title>
+    <meta
+      name="description"
+      content="A Luna-blue mini player on a rolling-hills desktop, running on the EKO Web engine with real OS media keys."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400..600&family=VT323&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../shared/playground.css" />
+    <link rel="stylesheet" href="./xp.css" />
+  </head>
+  <body>
+    <div class="os" id="os">
+      <main class="desktop" id="desktop" aria-label="Desktop">
+        <svg
+          class="bliss"
+          viewBox="0 0 760 560"
+          preserveAspectRatio="xMidYMax slice"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1757c9" />
+              <stop offset=".35" stop-color="#3a7fe0" />
+              <stop offset=".62" stop-color="#7ab3ee" />
+              <stop offset=".8" stop-color="#b8daf8" />
+            </linearGradient>
+            <radialGradient id="sun" cx=".72" cy=".18" r=".6">
+              <stop offset="0" stop-color="#ffffff" stop-opacity=".35" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+            </radialGradient>
+            <filter
+              id="cloud"
+              filterUnits="userSpaceOnUse"
+              x="-200"
+              y="-200"
+              width="1160"
+              height="700"
+            >
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency=".012 .03"
+                numOctaves="4"
+                seed="7"
+                result="n"
+              />
+              <feDisplacementMap
+                in="SourceGraphic"
+                in2="n"
+                scale="46"
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="d"
+              />
+              <feGaussianBlur in="d" stdDeviation="7" />
+            </filter>
+            <radialGradient id="hz">
+              <stop offset="0" stop-color="#fff" stop-opacity=".5" />
+              <stop offset=".6" stop-color="#fff" stop-opacity=".18" />
+              <stop offset="1" stop-color="#fff" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="hill" x1="0" y1="0" x2=".25" y2="1">
+              <stop offset="0" stop-color="#9ad84a" />
+              <stop offset=".18" stop-color="#6fbd2f" />
+              <stop offset=".55" stop-color="#3f9420" />
+              <stop offset="1" stop-color="#25661a" />
+            </linearGradient>
+            <linearGradient id="hill2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#7cb84a" />
+              <stop offset="1" stop-color="#3f7f2a" />
+            </linearGradient>
+            <radialGradient id="crest" cx=".36" cy=".08" r=".55">
+              <stop offset="0" stop-color="#e6ff8a" stop-opacity=".55" />
+              <stop offset="1" stop-color="#e6ff8a" stop-opacity="0" />
+            </radialGradient>
+            <filter id="grass" x="0" y="0" width="100%" height="100%">
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency=".9 .25"
+                numOctaves="2"
+                seed="3"
+                result="t"
+              />
+              <feColorMatrix
+                in="t"
+                type="matrix"
+                values="0 0 0 0 .1  0 0 0 0 .25  0 0 0 0 .05  0 0 0 .9 -.3"
+                result="c"
+              />
+              <feComposite in="c" in2="SourceGraphic" operator="in" />
+            </filter>
+            <filter id="haze" filterUnits="userSpaceOnUse" x="-100" y="0" width="960" height="700">
+              <feGaussianBlur stdDeviation="2.2" />
+            </filter>
+            <radialGradient id="orb" cx=".35" cy=".3" r=".75">
+              <stop offset="0" stop-color="#ffc08a" />
+              <stop offset=".5" stop-color="#ef6a1e" />
+              <stop offset="1" stop-color="#9a3a06" />
+            </radialGradient>
+          </defs>
+          <rect x="-400" width="1560" height="560" fill="url(#sky)" />
+          <rect width="760" height="560" fill="url(#sun)" />
+          <ellipse cx="560" cy="74" rx="230" ry="60" fill="url(#hz)" />
+          <ellipse cx="130" cy="176" rx="200" ry="44" fill="url(#hz)" />
+          <g filter="url(#cloud)" fill="#fff">
+            <ellipse cx="520" cy="96" rx="120" ry="30" opacity=".95" />
+            <ellipse cx="620" cy="80" rx="80" ry="24" opacity=".9" />
+            <ellipse cx="430" cy="118" rx="70" ry="16" opacity=".8" />
+            <ellipse cx="170" cy="70" rx="110" ry="22" opacity=".8" />
+            <ellipse cx="80" cy="96" rx="70" ry="14" opacity=".7" />
+            <ellipse cx="700" cy="210" rx="90" ry="16" opacity=".7" />
+            <ellipse cx="330" cy="236" rx="80" ry="12" opacity=".55" />
+          </g>
+          <path
+            d="M300 372 C 420 300, 560 268, 1160 290 L1160 560 L300 560Z"
+            fill="url(#hill2)"
+            filter="url(#haze)"
+            opacity=".85"
+          />
+          <path
+            d="M-420 330 C 90 268, 250 252, 380 286 C 500 318, 620 392, 1180 420 L1180 560 L-420 560Z"
+            fill="url(#hill)"
+          />
+          <path
+            d="M-420 330 C 90 268, 250 252, 380 286 C 500 318, 620 392, 1180 420 L1180 560 L-420 560Z"
+            fill="url(#crest)"
+          />
+          <path
+            d="M-420 330 C 90 268, 250 252, 380 286 C 500 318, 620 392, 1180 420 L1180 560 L-420 560Z"
+            fill="#000"
+            filter="url(#grass)"
+            opacity=".55"
+          />
+          <path
+            d="M-20 331 C 90 269, 250 253, 380 287 C 500 319, 620 393, 780 421"
+            fill="none"
+            stroke="#d9ff9c"
+            stroke-opacity=".35"
+            stroke-width="1.5"
+            filter="url(#haze)"
+          />
+        </svg>
+
+        <ul class="dicons" aria-label="Desktop icons">
+          <li>
+            <button class="dicon" data-icon="computer" title="Double-click to open">
+              <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+                <defs>
+                  <linearGradient id="mon" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#f4f2ea" />
+                    <stop offset="1" stop-color="#c9c4b4" />
+                  </linearGradient>
+                  <linearGradient id="scr" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#5aa0f0" />
+                    <stop offset="1" stop-color="#1a4fb8" />
+                  </linearGradient>
+                </defs>
+                <rect x="4" y="3" width="26" height="21" rx="2" fill="url(#mon)" stroke="#6b6858" />
+                <rect x="7" y="6" width="20" height="14" fill="url(#scr)" />
+                <path d="M8 18 C 13 12, 19 13, 26 10 L26 19 L8 19Z" fill="#5fae3a" />
+                <rect x="12" y="24" width="10" height="3" fill="#a8a392" />
+                <rect x="7" y="27" width="20" height="4" rx="1" fill="url(#mon)" stroke="#6b6858" />
+              </svg>
+              <span>My Computer</span>
+            </button>
+          </li>
+          <li>
+            <button class="dicon" data-icon="music" title="Double-click to open your music">
+              <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+                <defs>
+                  <linearGradient id="fold" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#fde69a" />
+                    <stop offset="1" stop-color="#e0b545" />
+                  </linearGradient>
+                </defs>
+                <path d="M3 8h11l3 3h14v18H3z" fill="#d9aa38" stroke="#9c7a20" />
+                <path d="M3 13h28v16H3z" fill="url(#fold)" stroke="#9c7a20" />
+                <circle cx="21" cy="22" r="4.5" fill="#2c2b27" />
+                <circle cx="21" cy="22" r="1.3" fill="#ef6a1e" />
+                <path d="M25.5 22V12.5l3 1" fill="none" stroke="#2c2b27" stroke-width="1.4" />
+              </svg>
+              <span>My Music</span>
+            </button>
+          </li>
+          <li>
+            <button class="dicon" data-icon="player" title="Double-click to open the player">
+              <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+                <circle cx="17" cy="17" r="14" fill="url(#orb)" stroke="#6b2a04" />
+                <ellipse cx="15" cy="10" rx="8" ry="4" fill="#fff" opacity=".3" />
+                <path
+                  d="M13 11h9M13 17h7M13 23h9M13 11v12"
+                  stroke="#fff"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span>EKO Mini Player</span>
+            </button>
+          </li>
+          <li>
+            <button class="dicon" data-icon="bin" title="Recycle Bin">
+              <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+                <defs>
+                  <linearGradient id="bin" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#cfe0e8" />
+                    <stop offset=".5" stop-color="#ffffff" />
+                    <stop offset="1" stop-color="#9fb7c3" />
+                  </linearGradient>
+                </defs>
+                <path d="M8 8h18l-2.5 23h-13z" fill="url(#bin)" stroke="#5c7380" />
+                <ellipse cx="17" cy="8" rx="10" ry="2.6" fill="#e9f2f6" stroke="#5c7380" />
+                <path d="M13 12l1 16M17 12v16M21 12l-1 16" stroke="#7e98a6" stroke-width=".9" />
+                <path d="M14 18l3-3 3 3" fill="none" stroke="#2f9a3a" stroke-width="1.6" />
+              </svg>
+              <span>Recycle Bin</span>
+            </button>
+          </li>
+        </ul>
+
+        <!-- ============ the mini player ============ -->
+        <section class="win" id="win" aria-labelledby="winTitle">
+          <header class="tb" id="titlebar">
+            <svg class="ticon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="7" fill="url(#orb)" stroke="#6b2a04" stroke-width=".6" />
+              <path
+                d="M5.5 5h5M5.5 8h4M5.5 11h5M5.5 5v6"
+                stroke="#fff"
+                stroke-width="1.4"
+                stroke-linecap="round"
+              />
+            </svg>
+            <h1 class="ttl" id="winTitle">EKO Mini Player</h1>
+            <button class="tbtn" id="minBtn" aria-label="Minimize">
+              <svg width="19" height="19" viewBox="0 0 19 19" aria-hidden="true">
+                <rect x="5" y="12" width="7" height="3" fill="#fff" />
+              </svg>
+            </button>
+            <button class="tbtn x" id="closeBtn" aria-label="Close">
+              <svg width="19" height="19" viewBox="0 0 19 19" aria-hidden="true">
+                <path
+                  d="M5.5 5.5l8 8M13.5 5.5l-8 8"
+                  stroke="#fff"
+                  stroke-width="2.2"
+                  stroke-linecap="square"
+                />
+              </svg>
+            </button>
+          </header>
+          <div class="frame">
+            <div class="body">
+              <div class="lcdwrap">
+                <div class="lcd">
+                  <div class="lab"><i id="lamp"></i><span id="lab">Ready</span></div>
+                  <div class="song" id="song">Drop music here</div>
+                  <div class="art" id="art">or press play for the Ember Set</div>
+                  <div class="time" id="time" aria-hidden="true">0:00</div>
+                  <div class="rem" id="rem" aria-hidden="true"></div>
+                  <canvas id="spectrum" aria-hidden="true"></canvas>
+                </div>
+              </div>
+
+              <div class="seek">
+                <em id="cur">0:00</em>
+                <div class="track">
+                  <div class="fill" id="seekFill"></div>
+                  <div class="thumb" id="seekThumb"><b></b></div>
+                  <input
+                    class="range"
+                    id="seek"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    value="0"
+                    aria-label="Seek"
+                  />
+                </div>
+                <em id="total">0:00</em>
+              </div>
+
+              <div class="ctl">
+                <button class="btn" data-act="prev" aria-label="Previous track">
+                  <svg width="14" height="10" viewBox="0 0 14 10" aria-hidden="true">
+                    <rect x="0" y="0" width="2" height="10" />
+                    <path d="M8 0v10L2 5z M14 0v10L8 5z" />
+                  </svg>
+                </button>
+                <button class="btn big def" data-act="toggle" id="playBtn" aria-label="Play">
+                  <svg class="i-play" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M2 0v12l10-6z" />
+                  </svg>
+                  <svg
+                    class="i-pause"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    aria-hidden="true"
+                  >
+                    <rect x="1" y="0" width="3.5" height="12" />
+                    <rect x="7.5" y="0" width="3.5" height="12" />
+                  </svg>
+                </button>
+                <button class="btn" data-act="stop" aria-label="Stop">
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                    <rect width="10" height="10" />
+                  </svg>
+                </button>
+                <button class="btn" data-act="next" aria-label="Next track">
+                  <svg width="14" height="10" viewBox="0 0 14 10" aria-hidden="true">
+                    <path d="M0 0v10l6-5z M6 0v10l6-5z" />
+                    <rect x="12" y="0" width="2" height="10" />
+                  </svg>
+                </button>
+                <button
+                  class="btn"
+                  data-act="open"
+                  aria-label="Open music files"
+                  title="Open music files"
+                >
+                  <svg width="15" height="12" viewBox="0 0 15 12" aria-hidden="true">
+                    <path d="M0 1h5l1.5 1.5H13V4H2.5L0 11z" fill="#c99a2e" />
+                    <path
+                      d="M2.5 4.5H15L12.5 11H0z"
+                      fill="#f2c94c"
+                      stroke="#9c7a20"
+                      stroke-width=".8"
+                    />
+                  </svg>
+                </button>
+                <span class="sp"></span>
+                <button
+                  class="mute"
+                  data-act="mute"
+                  id="muteBtn"
+                  aria-label="Mute"
+                  aria-pressed="false"
+                >
+                  <svg width="18" height="16" viewBox="0 0 18 16" aria-hidden="true">
+                    <path d="M1 5h3l5-4v14l-5-4H1z" fill="#5a5a5a" />
+                    <path
+                      class="waves"
+                      d="M11.5 4.5c1.6 1.8 1.6 5.2 0 7M14 2.5c2.7 3 2.7 8 0 11"
+                      fill="none"
+                      stroke="#5a5a5a"
+                      stroke-width="1.3"
+                    />
+                    <path
+                      class="cross"
+                      d="M11.5 5l5 6M16.5 5l-5 6"
+                      stroke="#c4200f"
+                      stroke-width="1.5"
+                    />
+                  </svg>
+                </button>
+                <div class="vol">
+                  <div class="fill" id="volFill"></div>
+                  <div class="thumb" id="volThumb"><b></b></div>
+                  <input
+                    class="range"
+                    id="vol"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="70"
+                    aria-label="Volume"
+                  />
+                </div>
+              </div>
+
+              <div class="status" role="status">
+                <div id="state">Ready</div>
+                <div id="kbps">--- kbps</div>
+                <div id="khz">-- kHz</div>
+                <div id="trackNo">No tracks</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ start menu ============ -->
+        <nav class="startmenu" id="startMenu" hidden aria-label="Start menu">
+          <div class="sm-head">
+            <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+              <rect x="1" y="1" width="32" height="32" rx="4" fill="#fff" />
+              <circle cx="17" cy="17" r="13" fill="url(#orb)" />
+              <path
+                d="M13 11h9M13 17h7M13 23h9M13 11v12"
+                stroke="#fff"
+                stroke-width="2.6"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span>EKO</span>
+          </div>
+          <ul class="sm-list">
+            <li>
+              <button data-act="demo">
+                <b>Play the Ember Set</b><small>Four tracks, one continuous piece</small>
+              </button>
+            </li>
+            <li>
+              <button data-act="open">
+                <b>Open music</b><small>Pick files from your computer</small>
+              </button>
+            </li>
+            <li>
+              <button data-act="show">
+                <b>EKO Mini Player</b><small>Bring the player back</small>
+              </button>
+            </li>
+          </ul>
+          <div class="sm-foot">
+            <a href="../">Back to the Playground</a>
+          </div>
+        </nav>
+
+        <!-- ============ tray balloon ============ -->
+        <div class="sr-only" id="announce" aria-live="polite"></div>
+        <div class="balloon" id="balloon" hidden>
+          <svg class="shape" viewBox="0 0 262 88" preserveAspectRatio="none" aria-hidden="true">
+            <path
+              d="M8.5 .5 H253.5 Q261.5 .5 261.5 8.5 V64.5 Q261.5 72.5 253.5 72.5 H178 L160 87.5 L156 72.5 H8.5 Q.5 72.5 .5 64.5 V8.5 Q.5 .5 8.5 .5Z"
+              fill="#ffffe1"
+              stroke="#000"
+            />
+          </svg>
+          <div class="bcontent">
+            <div class="bhead">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <defs>
+                  <radialGradient id="inf" cx=".35" cy=".3" r=".8">
+                    <stop offset="0" stop-color="#9fd0ff" />
+                    <stop offset=".6" stop-color="#2a6fd6" />
+                    <stop offset="1" stop-color="#103d9a" />
+                  </radialGradient>
+                </defs>
+                <circle cx="8" cy="8" r="7.5" fill="url(#inf)" />
+                <circle cx="8" cy="4.6" r="1.3" fill="#fff" />
+                <rect x="6.9" y="6.8" width="2.2" height="5.6" rx=".6" fill="#fff" />
+              </svg>
+              EKO Mini Player
+              <button class="bclose" id="balloonClose" aria-label="Close notification"></button>
+            </div>
+            <div class="bbody" id="balloonBody"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ============ taskbar ============ -->
+      <footer class="taskbar">
+        <button class="start" id="startBtn" aria-expanded="false" aria-controls="startMenu">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+            <defs>
+              <radialGradient id="so" cx=".35" cy=".3" r=".8">
+                <stop offset="0" stop-color="#ffd2a8" />
+                <stop offset=".5" stop-color="#ef6a1e" />
+                <stop offset="1" stop-color="#8a3306" />
+              </radialGradient>
+            </defs>
+            <circle cx="10" cy="10" r="8.6" fill="url(#so)" stroke="rgba(0,0,0,.35)" />
+            <ellipse cx="9" cy="6" rx="5" ry="2.6" fill="#fff" opacity=".35" />
+            <path
+              d="M7 6.5h6M7 10h5M7 13.5h6M7 6.5v7"
+              stroke="#fff"
+              stroke-width="1.7"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>start</span>
+        </button>
+        <div class="ql" aria-hidden="true">
+          <div class="grip"></div>
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <rect x="1" y="2" width="14" height="10" rx="1" fill="#e8eef8" stroke="#3a4f7a" />
+            <rect x="2.5" y="3.5" width="11" height="7" fill="#3f8ae6" />
+            <path d="M3 10 C6 7, 9 8, 13 6V10H3Z" fill="#5fae3a" />
+            <rect x="5" y="12.5" width="6" height="2" fill="#9aa6bb" />
+          </svg>
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <defs>
+              <radialGradient id="gl" cx=".35" cy=".3" r=".8">
+                <stop offset="0" stop-color="#bfe9ff" />
+                <stop offset=".6" stop-color="#2d8be0" />
+                <stop offset="1" stop-color="#0c4a9c" />
+              </radialGradient>
+            </defs>
+            <circle cx="8" cy="8" r="6.8" fill="url(#gl)" />
+            <path
+              d="M4 6c2-1 3 1 4 0s1-3 3-2M5 11c1-1 3 0 4-1"
+              fill="none"
+              stroke="#6cc04a"
+              stroke-width="1.6"
+            />
+            <ellipse
+              cx="8"
+              cy="8"
+              rx="7.6"
+              ry="2.4"
+              fill="none"
+              stroke="#f2b632"
+              stroke-width="1.1"
+              transform="rotate(-20 8 8)"
+            />
+          </svg>
+          <svg width="16" height="16" viewBox="0 0 16 16">
+            <circle cx="8" cy="8" r="7" fill="#2c2b27" stroke="#111" />
+            <circle cx="8" cy="8" r="4.2" fill="none" stroke="#555" stroke-width=".7" />
+            <circle cx="8" cy="8" r="1.8" fill="#ef6a1e" />
+            <path d="M3.2 5 A5.5 5.5 0 0 1 6 2.6" stroke="#fff" stroke-opacity=".5" fill="none" />
+          </svg>
+        </div>
+        <button
+          class="tbutton"
+          id="taskBtn"
+          aria-pressed="true"
+          aria-label="EKO Mini Player window"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="7" fill="url(#orb)" stroke="#6b2a04" stroke-width=".6" />
+            <path
+              d="M5.5 5h5M5.5 8h4M5.5 11h5M5.5 5v6"
+              stroke="#fff"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+          <span>EKO Mini Player</span>
+        </button>
+        <div class="tray">
+          <button class="trayicon" data-act="toggle" id="trayPlay" aria-label="Play">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="7" fill="url(#orb)" stroke="#6b2a04" stroke-width=".6" />
+              <path class="i-play" d="M6 5v6l5-3z" fill="#fff" />
+              <path class="i-pause" d="M5.5 5h2v6h-2zM8.5 5h2v6h-2z" fill="#fff" />
+            </svg>
+          </button>
+          <svg class="tray-deco" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="3.5" width="9" height="7" fill="#d6e4f5" stroke="#21406e" />
+            <rect x="5.5" y="7.5" width="9" height="7" fill="#f1f6fc" stroke="#21406e" />
+            <rect x="7" y="9" width="6" height="4" fill="#4a8fe0" />
+          </svg>
+          <button class="trayicon" data-act="mute" aria-label="Mute">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <defs>
+                <linearGradient id="spk" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ffffff" />
+                  <stop offset="1" stop-color="#b9c4d4" />
+                </linearGradient>
+              </defs>
+              <path d="M1.5 5.5h3l4-3.5v12l-4-3.5h-3z" fill="url(#spk)" stroke="#2b3d5c" />
+              <path
+                class="waves"
+                d="M10.5 5c1.2 1.5 1.2 4.5 0 6M12.5 3.2c2.2 2.6 2.2 7 0 9.6"
+                fill="none"
+                stroke="#fff"
+                stroke-width="1.2"
+                stroke-linecap="round"
+              />
+              <path
+                class="cross"
+                d="M10.5 5.5l4 5M14.5 5.5l-4 5"
+                stroke="#ff5a4a"
+                stroke-width="1.5"
+              />
+            </svg>
+          </button>
+          <time class="clock" id="clock"></time>
+        </div>
+      </footer>
+    </div>
+
+    <nav class="pg-bar" aria-label="Playground">
+      <a href="../">Back to the Playground</a>
+      <span class="pg-hint">Media keys work. <kbd>Space</kbd> play/pause.</span>
+    </nav>
+
+    <script type="module" src="./app.js"></script>
+    <script>
+      addEventListener("load", () => {
+        setTimeout(() => {
+          if (document.documentElement.dataset.ready) return;
+          document.getElementById("song").textContent =
+            location.protocol === "file:" ? "Serve this page over http" : "Run npm run build first";
+        }, 1500);
+      });
+    </script>
+  </body>
+</html>
