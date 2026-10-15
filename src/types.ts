@@ -80,6 +80,12 @@ export interface EkoWebEngineOptions {
    */
   context?: AudioContext;
   /**
+   * Where the engine's output goes. Default: the context's speakers
+   * (`context.destination`). Pass any node in your own graph (a mixer channel, a bus, a
+   * recorder) to route the engine through it instead; the analyser still sits on the way.
+   */
+  destination?: AudioNode;
+  /**
    * Seconds for the click-removal ramp on play, pause and seek. Default: `0.01`. Raise it
    * for an audible fade; do not set it to 0 unless you want clicks.
    */

@@ -86,6 +86,8 @@ export class EkoWebEngine {
   private readonly sourcePreference: "auto" | "buffer" | "element";
   private readonly bufferMaxBytes: number;
   private readonly injectedContext?: AudioContext;
+  /** Where the graph's output goes; see `EkoWebEngineOptions.destination`. */
+  private readonly destination?: AudioNode;
 
   private ctx: AudioContext | null = null;
   private graph: EkoGraph | null = null;
@@ -123,6 +125,8 @@ export class EkoWebEngine {
   // consumer's clicks land.
   private loading = false;
   private pendingIntent: "play" | "pause" | null = null;
+  /** The context time a play() made during a load asked to start at, if it named one. */
+  private pendingAt: number | undefined = undefined;
   // Bumped by setQueue(), commitSkip() and destroy(): the three calls that make an in-flight
   // loadIndex() stale. loadIndex(), commitSkip() and advanceWithGap() capture the current
   // token when they start and check it again after their await, so a superseded load never
@@ -160,6 +164,7 @@ export class EkoWebEngine {
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
     this.injectedContext = options.context;
+    this.destination = options.destination;
     this.tracks.setShuffle(options.shuffle ?? false);
     this.tracks.setRepeat(options.repeat ?? "none");
   }
@@ -328,6 +333,7 @@ export class EkoWebEngine {
     // A new queue starts with no intent of its own; any play()/pause() during its own
     // initial load is what sets one, same as the other two windows.
     this.pendingIntent = null;
+    this.pendingAt = undefined;
     if (this.tracks.currentIndex < 0) {
       // An empty queue (or a queue that setTracks otherwise left with nothing current) has
       // no load to start, but there is still whatever was loaded before this call: without
@@ -368,6 +374,7 @@ export class EkoWebEngine {
       // The new queue's first track failed. A play() made while it loaded must not fall
       // through to whatever the previous queue left loaded.
       this.pendingIntent = null;
+      this.pendingAt = undefined;
       return;
     }
     this.resolvePendingIntent();
@@ -467,8 +474,10 @@ export class EkoWebEngine {
   /** Act on whatever play()/pause() asked for while a load this token owns was in flight. */
   private resolvePendingIntent(): void {
     const intent = this.pendingIntent;
+    const at = this.pendingAt;
     this.pendingIntent = null;
-    if (intent === "play") void this.play();
+    this.pendingAt = undefined;
+    if (intent === "play") void this.play({ at });
     // "pause" or null: the load already left the engine paused with nothing started; there
     // is nothing further to do.
   }
@@ -502,7 +511,14 @@ export class EkoWebEngine {
   }
 
   // ── Transport ───────────────────────────────────────────────────────────────
-  async play(): Promise<void> {
+  /**
+   * Start or resume playback. With `at`, start on that exact AudioContext time instead of
+   * now: several engines sharing one context, or an engine and your own scheduler, can then
+   * start on the same sample. If `at` has already passed when playback can actually begin
+   * (a load ran late), the track starts at once from the position it would have reached by
+   * now, so it stays in step rather than starting late.
+   */
+  async play(options: { at?: number } = {}): Promise<void> {
     this.assertNotDestroyed();
     if (this.loading) {
       // A load is mid-flight (the initial load, a skip, or a gap-advance): `current` may
@@ -510,6 +526,7 @@ export class EkoWebEngine {
       // anything now would either do nothing or audibly replay the wrong track. Record the
       // intent; whichever call owns this load resumes for us once it settles.
       this.pendingIntent = "play";
+      this.pendingAt = options.at;
       return;
     }
     const ctx = this.ensureGraph();
@@ -542,7 +559,13 @@ export class EkoWebEngine {
       return;
     }
     if (!this._paused) return;
-    this.startSource(this.startOffset);
+    if (options.at === undefined) {
+      this.startSource(this.startOffset);
+    } else {
+      const late = Math.max(0, ctx.currentTime - options.at);
+      const offset = Math.min(this.startOffset + late, Math.max(0, this.current.duration - 0.001));
+      this.startSource(offset, Math.max(options.at, ctx.currentTime), true);
+    }
     this._paused = false;
     this.setState("playing");
     this.emitter.emit("play");
@@ -556,6 +579,7 @@ export class EkoWebEngine {
       // Same load-in-flight window play() guards above. Record the intent instead of
       // touching a source that may not exist yet, or that the load is about to replace.
       this.pendingIntent = "pause";
+      this.pendingAt = undefined;
       return;
     }
     if (this._paused) return; // genuinely idle already; nothing audible to fade
@@ -689,6 +713,7 @@ export class EkoWebEngine {
     // superseded is no longer "in flight" from here on, whether or not that load's own
     // await has settled yet.
     this.pendingIntent = wasPlaying ? "play" : null;
+    this.pendingAt = undefined;
     let rampEnd: number | undefined;
     if (wasPlaying) {
       // Ramp out, then cut on the ramp's last sample, the same shape as pause() and seek():
@@ -800,6 +825,7 @@ export class EkoWebEngine {
     this._lastTransition = null;
     this.loading = false;
     this.pendingIntent = null;
+    this.pendingAt = undefined;
     this.destroyed = true;
     // One last, accurate snapshot before the subscription channel closes, so a consumer
     // reading through `subscribe`/`getSnapshot` (a framework binding's render, mid-unmount)
@@ -992,6 +1018,7 @@ export class EkoWebEngine {
     // says otherwise. This is that default, in the same field a pause() or play() during
     // the window overwrites.
     this.pendingIntent = "play";
+    this.pendingAt = undefined;
     const token = this.advanceToken;
     // A pure read: the queue's position does not move until the load below actually
     // succeeds. If a manual next()/previous() supersedes this in the meantime, it sees the
@@ -1018,6 +1045,7 @@ export class EkoWebEngine {
         return;
       }
       this.pendingIntent = null;
+      this.pendingAt = undefined;
       this.publish();
       return;
     }
@@ -1040,6 +1068,7 @@ export class EkoWebEngine {
       // naturally running out does, rather than leaving `pendingIntent` pointed at a
       // boundary this call has decided not to reach.
       this.pendingIntent = null;
+      this.pendingAt = undefined;
       this.handleNaturalEnd();
       return;
     }
@@ -1133,12 +1162,17 @@ export class EkoWebEngine {
     if (this.ctx && this.graph) return this.ctx;
     const ctx = this.injectedContext ?? createAudioContext();
     this.ctx = ctx;
-    this.graph = new EkoGraph(ctx);
+    this.graph = new EkoGraph(ctx, this.destination);
     this.graph.userGain.gain.value = this._muted ? 0 : this._volume;
     return ctx;
   }
 
-  private startSource(offset: number, when?: number): void {
+  /**
+   * `pinFade`: hold the fade at silence until `at` and ramp up from there. True for any
+   * start nothing else has scheduled a fade for (a fresh start now, or a play({ at }));
+   * false only when `when` is the end of a fade-out the caller just scheduled (see below).
+   */
+  private startSource(offset: number, when?: number, pinFade = when === undefined): void {
     const ctx = this.ctx!;
     const current = this.current!;
     const at = when ?? ctx.currentTime;
@@ -1148,7 +1182,7 @@ export class EkoWebEngine {
 
     // Fade in from silence so starting mid-waveform does not click.
     const fade = this.graph!.fadeGain.gain;
-    if (when === undefined) {
+    if (pinFade) {
       // A standalone start (e.g. resuming from a stop): nothing is scheduled at `at`, so
       // pin the value there before ramping up.
       fade.cancelScheduledValues(at);

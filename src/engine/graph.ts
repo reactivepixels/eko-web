@@ -31,8 +31,12 @@ export class EkoGraph {
   private _analyser: AnalyserNode | null = null;
   private inserts: EkoInsert[] = [];
 
-  constructor(context: AudioContext) {
+  /** Where the chain ends: the speakers unless the consumer routed it elsewhere. */
+  private readonly output: AudioNode;
+
+  constructor(context: AudioContext, output: AudioNode = context.destination) {
     this.context = context;
+    this.output = output;
     // Creation order is load-bearing: tests index ctx.gains by position.
     this.input = context.createGain();
     this.fadeGain = context.createGain();
@@ -95,9 +99,9 @@ export class EkoGraph {
 
     if (this._analyser) {
       this.userGain.connect(this._analyser);
-      this._analyser.connect(this.context.destination);
+      this._analyser.connect(this.output);
     } else {
-      this.userGain.connect(this.context.destination);
+      this.userGain.connect(this.output);
     }
   }
 }
