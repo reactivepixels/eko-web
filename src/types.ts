@@ -83,6 +83,8 @@ export interface EkoWebEngineOptions {
    * Where the engine's output goes. Default: the context's speakers
    * (`context.destination`). Pass any node in your own graph (a mixer channel, a bus, a
    * recorder) to route the engine through it instead; the analyser still sits on the way.
+   * The node must belong to the engine's context: pass the same `context`, or leave
+   * `context` out and the engine uses the destination's own.
    */
   destination?: AudioNode;
   /**

@@ -81,8 +81,11 @@ bit-perfect; **EKO Web is not, and doesn't pretend to be**. See the scope below.
   live in the library because gapless arms the next track during the current one, so
   something has to answer "what plays next" before the boundary arrives.
 - **A real audio graph**: clean gain staging, an insert point for your own EQ or effects
-  (`setInserts`, which takes plain nodes or whole `{ input, output }` sub-graphs), and an
-  analyser tap for a spectrum or waveform.
+  (`setInserts`, which takes plain nodes or whole `{ input, output }` sub-graphs), an
+  analyser tap for a spectrum or waveform, and a `destination` option to route the engine
+  into your own mixer instead of the speakers.
+- **Sample-accurate starts**: `play({ at })` starts on an exact AudioContext time, so several
+  engines sharing one context (or an engine and your own sequencer) start on the same sample.
 - **A streaming fallback for long files**: a DJ set or a podcast streams through an
   `<audio>` element instead of being decoded whole, so memory stays flat at any length. You
   lose sample-accurate gapless on that track's boundaries; everything else still applies.

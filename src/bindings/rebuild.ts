@@ -11,8 +11,8 @@ import type { EkoTrack, EkoWebEngineOptions } from "../types";
 /**
  * The options only the constructor reads, as one comparable string. Two option objects
  * with the same values give the same key, so an inline object literal passed on every
- * render does not look like a change. `context` is left out because an `AudioContext`
- * does not serialise: the bindings compare it by identity alongside this key.
+ * render does not look like a change. `context` and `destination` are left out because
+ * audio objects do not serialise: the bindings compare them by identity alongside this key.
  *
  * `shuffle` and `repeat` are left out on purpose. They can be changed on a live engine,
  * so they are starting values, not a reason to rebuild.

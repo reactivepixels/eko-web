@@ -61,11 +61,15 @@ export function useEkoWebEngine(
   if (getCurrentInstance()) onMounted(loadInitial);
   else loadInitial();
 
-  // Two sources rather than one array getter: a getter returning a fresh array would read
-  // as changed on every run. Each of these compares by value (the key) or identity (the
-  // context), so only a real change rebuilds.
+  // Separate sources rather than one array getter: a getter returning a fresh array would
+  // read as changed on every run. Each compares by value (the key) or identity (context and
+  // destination), so only a real change rebuilds.
   const stopWatch = watch(
-    [() => engineKey(toValue(options)), () => toValue(options).context],
+    [
+      () => engineKey(toValue(options)),
+      () => toValue(options).context,
+      () => toValue(options).destination,
+    ],
     () => {
       const old = engine.value;
       const next = markRaw(new EkoWebEngine(toValue(options)));
@@ -90,7 +94,7 @@ export function useEkoWebEngine(
  * `currentTime` is deliberately absent (it lives on `useEkoTime` instead).
  */
 export interface EkoPlayer extends EkoSnapshot {
-  play(): Promise<void>;
+  play(options?: { at?: number }): Promise<void>;
   pause(): void;
   next(): void;
   previous(): void;

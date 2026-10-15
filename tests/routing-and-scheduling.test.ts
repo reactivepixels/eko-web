@@ -117,4 +117,56 @@ describe("play({ at })", () => {
     const src = ctx.sources[ctx.sources.length - 1]!;
     expect(src.startWhen).toBeGreaterThanOrEqual(3);
   });
+
+  it("reads the starting position until the start time arrives", async () => {
+    restore = stubFetch();
+    const { ctx, engine } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    engine.seek(1);
+    ctx.currentTime = 5;
+    await engine.play({ at: 7 });
+    ctx.currentTime = 6;
+    expect(engine.currentTime).toBe(1);
+    ctx.currentTime = 7.5;
+    expect(engine.currentTime).toBeCloseTo(1.5, 6);
+  });
+
+  it("a seek before the start time keeps the start time", async () => {
+    restore = stubFetch();
+    const { ctx, engine } = setup();
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    ctx.currentTime = 1;
+    await engine.play({ at: 3 });
+    engine.seek(2);
+    const src = ctx.sources[ctx.sources.length - 1]!;
+    expect(src.startWhen).toBe(3);
+    expect(src.startOffset).toBe(2);
+  });
+
+  it("under repeat-one, a very late start wraps around the loop instead of clamping", async () => {
+    restore = stubFetch();
+    const { ctx, engine } = setup();
+    engine.setRepeat("one");
+    const ready = whenReady(engine);
+    engine.setQueue([{ src: "/a.flac" }]);
+    await ready;
+    ctx.currentTime = 10;
+    await engine.play({ at: 0.5 });
+    const src = ctx.sources[ctx.sources.length - 1]!;
+    expect(src.startOffset).toBeCloseTo(9.5 % 4, 6);
+  });
+});
+
+describe("destination without a context", () => {
+  it("uses the destination's own context", () => {
+    const ctx = new MockAudioContext();
+    const bus = new MockGainNode();
+    (bus as unknown as { context: unknown }).context = ctx;
+    const engine = new EkoWebEngine({ destination: bus as unknown as AudioNode });
+    expect(engine.context).toBe(ctx);
+  });
 });

@@ -30,7 +30,7 @@ export interface EkoWebEngineInit {
  *   by one microtask and cancelled if the same engine mounts again before it runs, which
  *   is exactly what the simulated remount does. A real unmount still destroys it.
  * - **Construction-time options.** `transition`, `crossfadeSeconds`, `normalize`,
- *   `targetLufs`, `fadeSeconds`, `source`, `bufferMaxBytes` and `context` are read once, by
+ *   `targetLufs`, `fadeSeconds`, `source`, `bufferMaxBytes`, `context` and `destination` are read once, by
  *   the constructor. Changing one here builds a new engine and carries over the queue, the
  *   position in it, shuffle, repeat, volume and mute. Playback stops at that point: the new
  *   engine loads the same track, paused at its start. Inserts (`setInserts`) are not
@@ -53,11 +53,12 @@ export function useEkoWebEngine(
 ): EkoWebEngine {
   const key = engineKey(options);
   const context = options.context;
+  const destination = options.destination;
   // The constructor only assigns fields (no AudioContext until first play), so building
   // one during render is safe on the server, and the throwaway a StrictMode double render
   // makes holds nothing that needs releasing.
   const [engine, setEngine] = useState(() => new EkoWebEngine(options));
-  const built = useRef({ engine, key, context });
+  const built = useRef({ engine, key, context, destination });
   const initial = useRef(init);
   const queued = useRef(false);
   const pendingDestroy = useRef(new Set<EkoWebEngine>());
@@ -71,7 +72,7 @@ export function useEkoWebEngine(
       // showing it again. Build a replacement from what the old one was doing.
       const next = new EkoWebEngine(options);
       if (carry.current) restoreCarry(next, carry.current);
-      built.current = { engine: next, key, context };
+      built.current = { engine: next, key, context, destination };
       setEngine(next);
       return;
     }
@@ -96,14 +97,16 @@ export function useEkoWebEngine(
 
   useEffect(() => {
     const current = built.current;
-    if (current.key === key && current.context === context) return;
+    if (current.key === key && current.context === context && current.destination === destination) {
+      return;
+    }
     const next = new EkoWebEngine(options);
     restoreCarry(next, captureCarry(current.engine));
-    built.current = { engine: next, key, context };
+    built.current = { engine: next, key, context, destination };
     // The effect above destroys the old engine once this one has mounted in its place.
     setEngine(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, context]);
+  }, [key, context, destination]);
 
   return engine;
 }
@@ -118,7 +121,7 @@ export function useEkoWebEngine(
  * animation frame and would defeat that stability if it lived here).
  */
 export interface EkoPlayer extends EkoSnapshot {
-  play(): Promise<void>;
+  play(options?: { at?: number }): Promise<void>;
   pause(): void;
   next(): void;
   previous(): void;

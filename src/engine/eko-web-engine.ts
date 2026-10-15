@@ -163,7 +163,9 @@ export class EkoWebEngine {
     this.fadeSeconds = seconds(options.fadeSeconds, DEFAULTS.fadeSeconds);
     this.sourcePreference = options.source ?? DEFAULTS.source;
     this.bufferMaxBytes = options.bufferMaxBytes ?? DEFAULTS.bufferMaxBytes;
-    this.injectedContext = options.context;
+    // A destination belongs to a context; the engine has to live in that same one.
+    this.injectedContext =
+      options.context ?? (options.destination?.context as AudioContext | undefined);
     this.destination = options.destination;
     this.tracks.setShuffle(options.shuffle ?? false);
     this.tracks.setRepeat(options.repeat ?? "none");
@@ -291,6 +293,8 @@ export class EkoWebEngine {
   get currentTime(): number {
     if (!this.current) return 0;
     if (this._paused || !this.ctx) return this.startOffset;
+    // Started with play({ at }) and `at` has not come yet: still at the starting position.
+    if (this.ctx.currentTime < this.startCtxTime) return this.startOffset;
     const t = this.startOffset + (this.ctx.currentTime - this.startCtxTime);
     return Math.max(0, Math.min(t, this.current.duration));
   }
@@ -516,7 +520,8 @@ export class EkoWebEngine {
    * now: several engines sharing one context, or an engine and your own scheduler, can then
    * start on the same sample. If `at` has already passed when playback can actually begin
    * (a load ran late), the track starts at once from the position it would have reached by
-   * now, so it stays in step rather than starting late.
+   * now, so it stays in step rather than starting late. A streaming track (the element
+   * source) cannot be scheduled to a sample, so it ignores `at` and starts now.
    */
   async play(options: { at?: number } = {}): Promise<void> {
     this.assertNotDestroyed();
@@ -559,11 +564,21 @@ export class EkoWebEngine {
       return;
     }
     if (!this._paused) return;
-    if (options.at === undefined) {
+    // A streaming (element) source cannot be started on a future sample; it starts now.
+    if (options.at === undefined || !this.current.canGapless) {
       this.startSource(this.startOffset);
     } else {
       const late = Math.max(0, ctx.currentTime - options.at);
-      const offset = Math.min(this.startOffset + late, Math.max(0, this.current.duration - 0.001));
+      const duration = this.current.duration;
+      let offset = this.startOffset + late;
+      // Under repeat-one the track would have looped by now: wrap rather than clamp, so a
+      // very late start still lands in step with anything started on the same `at`.
+      if (offset >= duration) {
+        offset =
+          this.tracks.repeat === "one" && duration > 0
+            ? offset % duration
+            : Math.max(0, duration - 0.001);
+      }
       this.startSource(offset, Math.max(options.at, ctx.currentTime), true);
     }
     this._paused = false;
@@ -602,9 +617,19 @@ export class EkoWebEngine {
     } else {
       // Ramp out, cut at the ramp end, and start the new position there. startSource
       // fades back in from silence, so the seek is inaudible in both directions.
-      const rampEnd = this.fadeOutAndStop();
-      this.clearArmed(rampEnd);
-      this.startSource(t, rampEnd);
+      const scheduled = this.ctx && this.ctx.currentTime < this.startCtxTime;
+      if (scheduled) {
+        // Started with play({ at }) and not sounding yet: keep the start time, change only
+        // the position it starts from.
+        const at = this.startCtxTime;
+        this.stopSource();
+        this.clearArmed();
+        this.startSource(t, at, true);
+      } else {
+        const rampEnd = this.fadeOutAndStop();
+        this.clearArmed(rampEnd);
+        this.startSource(t, rampEnd);
+      }
       void this.armNext(); // re-arm from the new position
     }
     this.emitter.emit("timeupdate", { currentTime: t, duration: this.current.duration });
@@ -926,7 +951,8 @@ export class EkoWebEngine {
     // schedule a start in the past, and to the incoming track's own duration, or the
     // incoming side would end first and its promotion would hard-stop the outgoing one
     // partway down its ramp.
-    const remaining = Math.max(0, endCtxTime - this.ctx.currentTime);
+    // Measured from when the track actually sounds, which play({ at }) may put in the future.
+    const remaining = Math.max(0, endCtxTime - Math.max(this.ctx.currentTime, this.startCtxTime));
     const overlap =
       this.transition === "crossfade"
         ? Math.min(this.crossfadeSeconds, remaining, next.duration)
